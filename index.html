@@ -204,56 +204,133 @@ function hist(){const jd=justDone;justDone=null;const ban=jd?`<div class="hero" 
   return `<h1>Historial</h1>`+ban+S.hist.map(w=>`<div class="card"><div class="row" style="margin:0"><h2 style="flex:1">${esc(w.session)}</h2><button class="del" data-x="${w.id}">Borrar</button></div><div class="mu">${w.week?'Semana '+w.week+' · ':''}${w.date}</div>`+
     w.ex.map(e=>`<div style="margin-top:6px"><b>${esc(e.name)}</b> <span class="mu">${e.sets?e.sets.map(s=>(s.kg||'—')+'kg×'+s.reps).join(' · '):e.m!==undefined?([e.m,e.min?e.min+' min':''].filter(Boolean).join(' · ')||'hecho'):'hecho'}</span>${e.note?`<div class="mu">📝 ${esc(e.note)}</div>`:''}</div>`).join('')+(w.kcal?`<div class="mu" style="margin-top:8px">🔥 ≈ ${w.kcal} kcal (estimado)</div>`:'')+`</div>`).join('');
 }
-function seg7(g,W,H){
-  const hst=new Array(256).fill(0);for(let i=0;i<g.length;i++)hst[g[i]]++;
-  const tot=g.length;let sum=0;for(let i=0;i<256;i++)sum+=i*hst[i];
-  let wB=0,sB=0,best=-1,th=128;
-  for(let t=0;t<256;t++){wB+=hst[t];if(!wB)continue;const wF=tot-wB;if(!wF)break;sB+=t*hst[t];const mB=sB/wB,mF=(sum-sB)/wF,v=wB*wF*(mB-mF)*(mB-mF);if(v>best){best=v;th=t}}
-  let dark=0;for(let i=0;i<g.length;i++)if(g[i]<=th)dark++;
-  const fgDark=dark<tot-dark,fg=new Uint8Array(W*H);
-  for(let i=0;i<W*H;i++)fg[i]=((g[i]<=th)===fgDark)?1:0;
-  const r=Math.max(2,Math.round(H/40));
-  const tmp=new Uint8Array(W*H),dl=new Uint8Array(W*H);
-  for(let y=0;y<H;y++){let c=0;for(let x=-r;x<W;x++){if(x+r<W)c+=fg[y*W+x+r];if(x-r-1>=0)c-=fg[y*W+x-r-1];if(x>=0)tmp[y*W+x]=c>0?1:0}}
-  for(let x=0;x<W;x++){let c=0;for(let y=-r;y<H;y++){if(y+r<H)c+=tmp[(y+r)*W+x];if(y-r-1>=0)c-=tmp[(y-r-1)*W+x];if(y>=0)dl[y*W+x]=c>0?1:0}}
-  const seen=new Uint8Array(W*H),comps=[];
-  for(let s=0;s<W*H;s++){
-    if(!dl[s]||seen[s])continue;
-    const st=[s];seen[s]=1;const c={x0:W,y0:H,x1:-1,y1:-1,n:0};
-    while(st.length){const p=st.pop(),x=p%W,y=(p/W)|0;
-      if(fg[p]){c.n++;if(x<c.x0)c.x0=x;if(x>c.x1)c.x1=x;if(y<c.y0)c.y0=y;if(y>c.y1)c.y1=y}
-      if(x>0&&dl[p-1]&&!seen[p-1]){seen[p-1]=1;st.push(p-1)}
-      if(x<W-1&&dl[p+1]&&!seen[p+1]){seen[p+1]=1;st.push(p+1)}
-      if(y>0&&dl[p-W]&&!seen[p-W]){seen[p-W]=1;st.push(p-W)}
-      if(y<H-1&&dl[p+W]&&!seen[p+W]){seen[p+W]=1;st.push(p+W)}}
-    if(c.n>0)comps.push(c);
-  }
-  const m=3,ok=comps.filter(c=>c.x0>m&&c.y0>m&&c.x1<W-1-m&&c.y1<H-1-m).map(c=>({...c,w:c.x1-c.x0+1,h:c.y1-c.y0+1})).filter(c=>c.w<=1.5*c.h||c.h<0.3*H);
-  if(!ok.length)return{text:'',ok:false};
-  const mh=Math.max(...ok.map(c=>c.h));
-  const digs=ok.filter(c=>c.h>=0.6*mh).sort((a,b)=>a.x0-b.x0);
-  const bot=Math.max(...digs.map(c=>c.y1));
-  const dots=ok.filter(c=>c.h<0.3*mh&&c.w<0.3*mh&&c.y1>bot-0.3*mh&&c.w/c.h>0.4&&c.w/c.h<2.5);
-  const PAT={abcdef:'0',bc:'1',abdeg:'2',abcdg:'3',bcfg:'4',acdfg:'5',acdefg:'6',abc:'7',abcdefg:'8',abcdfg:'9',abcfg:'9'};
-  const fill=(c,x0,x1,y0,y1)=>{let n=0,t=0;const X0=Math.round(c.x0+x0*c.w),X1=Math.max(X0+1,Math.round(c.x0+x1*c.w)),Y0=Math.round(c.y0+y0*c.h),Y1=Math.max(Y0+1,Math.round(c.y0+y1*c.h));
-    for(let y=Y0;y<Y1;y++)for(let x=X0;x<X1;x++){t++;n+=fg[y*W+x]}return t?n/t:0};
-  let out='',bad=false;
-  digs.forEach((c,i)=>{
-    let ch;
-    if(c.w<0.28*c.h)ch='1';
-    else{
-      const z={a:fill(c,.25,.75,0,.14),d:fill(c,.25,.75,.86,1),g:fill(c,.25,.75,.43,.57),b:fill(c,.86,1,.12,.45),c:fill(c,.86,1,.55,.88),f:fill(c,0,.14,.12,.45),e:fill(c,0,.14,.55,.88)};
-      const k=Object.keys(z).filter(s=>z[s]>0.5).sort().join('');
-      ch=PAT[k]||'?';
+function seg7(g,W,H,dbg){
+  const run=light=>{
+    const S=W+1,I=new Float64Array(S*(H+1));
+    for(let y=0;y<H;y++){let r=0;for(let x=0;x<W;x++){r+=g[y*W+x];I[(y+1)*S+x+1]=I[y*S+x+1]+r}}
+    const R=Math.max(12,Math.round(H/4)),fg=new Uint8Array(W*H);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const x0=Math.max(0,x-R),x1=Math.min(W,x+R+1),y0=Math.max(0,y-R),y1=Math.min(H,y+R+1);
+      const m=(I[y1*S+x1]-I[y0*S+x1]-I[y1*S+x0]+I[y0*S+x0])/((x1-x0)*(y1-y0)),v=g[y*W+x];
+      fg[y*W+x]=light?((v-m>30&&v>1.15*m)?1:0):((m-v>30&&v<0.85*m)?1:0);
     }
-    if(ch==='?')bad=true;
-    out+=ch;
-    const nx=digs[i+1];
-    if(dots.some(d=>d.x0>=c.x1-2&&(!nx||d.x1<=nx.x0+2)))out+='.';
-  });
-  return{text:out,ok:!bad&&digs.length>=2};
-}
 
+    // sacar manchas gruesas (marco/bisel) y los bordes del recuadro
+    const Tm=Math.max(6,Math.round(H*0.11)),h2=Tm>>1,S2=W+1,J=new Int32Array(S2*(H+1));
+    for(let y=0;y<H;y++){let r=0;for(let x=0;x<W;x++){r+=fg[y*W+x];J[(y+1)*S2+x+1]=J[y*S2+x+1]+r}}
+    const er=new Uint8Array(W*H);
+    for(let y=0;y+Tm<=H;y++)for(let x=0;x+Tm<=W;x++){
+      if(J[(y+Tm)*S2+x+Tm]-J[y*S2+x+Tm]-J[(y+Tm)*S2+x]+J[y*S2+x]===Tm*Tm)er[(y+h2)*W+x+h2]=1}
+    const dil=(src,rr)=>{const a=new Uint8Array(W*H),b=new Uint8Array(W*H);
+      for(let y=0;y<H;y++){let c=0;for(let x=-rr;x<W;x++){if(x+rr<W)c+=src[y*W+x+rr];if(x-rr-1>=0)c-=src[y*W+x-rr-1];if(x>=0)a[y*W+x]=c>0?1:0}}
+      for(let x=0;x<W;x++){let c=0;for(let y=-rr;y<H;y++){if(y+rr<H)c+=a[(y+rr)*W+x];if(y-rr-1>=0)c-=a[(y-rr-1)*W+x];if(y>=0)b[y*W+x]=c>0?1:0}}
+      return b};
+    const thick=dil(er,h2+2);
+    for(let y=0;y<H;y++){let x=0;while(x<W){if(!fg[y*W+x]){x++;continue}let e=x;while(e<W&&fg[y*W+e])e++;if(e-x>0.3*W)for(let k=x;k<e;k++)fg[y*W+k]=0;x=e}}
+    for(let x=0;x<W;x++){let y=0;while(y<H){if(!fg[y*W+x]){y++;continue}let e=y;while(e<H&&fg[e*W+x])e++;if(e-y>0.85*H)for(let k=y;k<e;k++)fg[k*W+x]=0;y=e}}
+    const bx=Math.round(W*0.035),by=Math.round(H*0.05);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x;if(thick[i]||x<bx||x>=W-bx||y<by||y>=H-by)fg[i]=0}
+    // enderezar (inclinación de los números)
+    const off=Math.ceil(H*.3),W2=W+2*off;let bk=0,bs=-1;
+    for(let k=-0.4;k<=0.401;k+=0.02){const c=new Float64Array(W2);
+      for(let y=0;y<H;y++){const sh=Math.round(k*(y-H/2))+off;for(let x=0;x<W;x++)if(fg[y*W+x]){const xx=x+sh;if(xx>=0&&xx<W2)c[xx]++}}
+      let s=0;for(let i=0;i<W2;i++)s+=c[i]*c[i];if(s>bs){bs=s;bk=k}}
+    const f2=new Uint8Array(W2*H);
+    for(let y=0;y<H;y++){const sh=Math.round(bk*(y-H/2))+off;for(let x=0;x<W;x++)if(fg[y*W+x]){const xx=x+sh;if(xx>=0&&xx<W2)f2[y*W2+xx]=1}}
+    const rd=[];{const sn=new Uint8Array(W2*H);
+      for(let s0=0;s0<W2*H;s0++){if(!f2[s0]||sn[s0])continue;const st=[s0];sn[s0]=1;const pix=[];let x0=W2,x1=-1,y0=H,y1=-1;
+        while(st.length){const p=st.pop(),x=p%W2,y=(p/W2)|0;pix.push(p);if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;
+          for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=x+dx,ny=y+dy;if(nx<0||ny<0||nx>=W2||ny>=H)continue;const q=ny*W2+nx;if(f2[q]&&!sn[q]){sn[q]=1;st.push(q)}}}
+        const w=x1-x0+1,h=y1-y0+1;
+        if(pix.length>=20&&w<=0.16*H&&h<=0.16*H&&w/h>0.5&&w/h<2){rd.push({x0,x1,y0,y1,w,h,n:pix.length});pix.forEach(p=>{f2[p]=0})}}}
+    const WW=W2,r=Math.max(2,Math.round(H/70)),tmp=new Uint8Array(WW*H),dl=new Uint8Array(WW*H);
+    for(let y=0;y<H;y++){let c=0;for(let x=-r;x<WW;x++){if(x+r<WW)c+=f2[y*WW+x+r];if(x-r-1>=0)c-=f2[y*WW+x-r-1];if(x>=0)tmp[y*WW+x]=c>0?1:0}}
+    for(let x=0;x<WW;x++){let c=0;for(let y=-r;y<H;y++){if(y+r<H)c+=tmp[(y+r)*WW+x];if(y-r-1>=0)c-=tmp[(y-r-1)*WW+x];if(y>=0)dl[y*WW+x]=c>0?1:0}}
+    const seen=new Uint8Array(WW*H),comps=[];
+    for(let s=0;s<WW*H;s++){
+      if(!dl[s]||seen[s])continue;
+      const st=[s];seen[s]=1;const c={x0:WW,y0:H,x1:-1,y1:-1,n:0};
+      while(st.length){const p=st.pop(),x=p%WW,y=(p/WW)|0;
+        if(f2[p]){c.n++;if(x<c.x0)c.x0=x;if(x>c.x1)c.x1=x;if(y<c.y0)c.y0=y;if(y>c.y1)c.y1=y}
+        if(x>0&&dl[p-1]&&!seen[p-1]){seen[p-1]=1;st.push(p-1)}
+        if(x<WW-1&&dl[p+1]&&!seen[p+1]){seen[p+1]=1;st.push(p+1)}
+        if(y>0&&dl[p-WW]&&!seen[p-WW]){seen[p-WW]=1;st.push(p-WW)}
+        if(y<H-1&&dl[p+WW]&&!seen[p+WW]){seen[p+WW]=1;st.push(p+WW)}}
+      if(c.n>0)comps.push(c);
+    }
+    if(dbg)dbg.push({light,all:comps.map(c=>[c.x0,c.y0,c.x1-c.x0+1,c.y1-c.y0+1,c.n])});
+    const ok=comps.map(c=>({...c,w:c.x1-c.x0+1,h:c.y1-c.y0+1})).filter(c=>c.h<=0.93*H&&c.w<=0.9*W&&(c.w<=1.5*c.h||c.h<0.3*H));
+    if(dbg)dbg.push({light,bk,comps:ok.map(c=>[c.x0,c.y0,c.w,c.h,c.n])});
+    if(!ok.length)return{text:'',ok:false,score:0};
+    // altura de referencia: el grupo más numeroso de comps altos y similares
+    const cxr=c=>((c.x0+c.x1)/2-off)/W;
+    const edge=c=>c.w<0.28*c.h&&(cxr(c)<0.075||cxr(c)>0.925);
+    const tall=ok.filter(c=>c.h>=0.4*H&&c.w<=0.75*c.h&&!edge(c)).sort((p,q)=>p.h-q.h);
+    if(!tall.length)return{text:'',ok:false,score:0};
+    const mh=tall[tall.length>>1].h,dw=0.47*mh;
+    const dots=rd.slice();let digs=[];
+    const colsum=(x,y0,y1)=>{let n=0;for(let y=y0;y<=y1;y++)n+=f2[y*WW+x];return n};
+    ok.forEach(c=>{
+      if(c.h<0.65*mh||c.h>1.35*mh||edge(c))return;
+      if(c.w>1.5*dw*1.0&&c.w>0.75*c.h){
+        const n=Math.max(2,Math.round(c.w/dw)),cuts=[c.x0];
+        for(let k=1;k<n;k++){const t=c.x0+k*c.w/n;let bx=Math.round(t),bv=1e9;
+          for(let x=Math.round(t-0.3*dw);x<=Math.round(t+0.3*dw);x++){const v=colsum(x,c.y0,c.y1);if(v<bv){bv=v;bx=x}}cuts.push(bx)}
+        cuts.push(c.x1+1);
+        for(let k=0;k<n;k++){
+          const xa=cuts[k]+(k?1:0),xb=cuts[k+1]-1;
+          // punto decimal: grupito chico abajo pegado al corte
+          if(k>0){const cx=cuts[k];let x0=1e9,x1=-1,y0=1e9,y1=-1,cn=0;
+            for(let y=Math.round(c.y1-0.28*c.h);y<=c.y1;y++)for(let x=Math.round(cx-0.12*dw);x<=Math.round(cx+0.12*dw);x++)if(f2[y*WW+x]){cn++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+            if(cn>=6&&x1-x0<0.3*mh&&y1-y0<0.3*mh){dots.push({x0,x1,y0,y1,w:x1-x0+1,h:y1-y0+1,n:cn});for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++)f2[y*WW+x]=0}}
+          let x0=1e9,x1=-1,y0=1e9,y1=-1,cn=0;
+          for(let y=c.y0;y<=c.y1;y++)for(let x=xa;x<=xb;x++)if(f2[y*WW+x]){cn++;if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+          if(cn>20)digs.push({x0,x1,y0,y1,w:x1-x0+1,h:y1-y0+1,n:cn});
+        }
+      }else digs.push(c);
+    });
+    const trim=c=>{let x0=c.x0,x1=c.x1,y0=c.y0,y1=c.y1;
+      for(let it=0;it<2;it++){
+        const h=y1-y0+1;while(x0<x1&&colsum(x0,y0,y1)<0.05*h)x0++;while(x1>x0&&colsum(x1,y0,y1)<0.05*h)x1--;
+        const w=Math.min(x1-x0+1,0.6*h);
+        const rs=y=>{let n=0;for(let x=x0;x<=x1;x++)n+=f2[y*WW+x];return n};
+        while(y0<y1&&rs(y0)<0.12*w)y0++;while(y1>y0&&rs(y1)<0.12*w)y1--;
+      }
+      if(y1-y0+1>1.08*mh){let by=y0,bv=-1;for(let ys=y0;ys+mh-1<=y1;ys++){let n=0;for(let y=ys;y<ys+mh;y++)for(let x=x0;x<=x1;x++)n+=f2[y*WW+x];if(n>bv){bv=n;by=ys}}y0=by;y1=by+mh-1}
+      return{...c,x0,x1,y0,y1,w:x1-x0+1,h:y1-y0+1}};
+    digs=digs.map(trim).filter(c=>Math.abs(c.h-mh)<=0.3*mh).sort((p,q)=>p.x0-q.x0);
+    ok.forEach(c=>{if(c.h<0.3*mh&&c.w<0.3*mh&&c.w/c.h>0.4&&c.w/c.h<2.5&&c.n>=6)dots.push(c)});
+    if(dbg)dbg.push({light,mh,dots:dots.map(d=>[d.x0,d.y0,d.w,d.h,d.n]),digs:digs.map(d=>[d.x0,d.y0,d.w,d.h])});
+    if(!digs.length)return{text:'',ok:false,score:0};
+    const bot=Math.max(...digs.map(c=>c.y1));
+    const PAT={abcdef:'0',bc:'1',abdeg:'2',abcdg:'3',bcfg:'4',acdfg:'5',acdefg:'6',abc:'7',abcdefg:'8',abcdfg:'9',abcfg:'9',bcdefg:'6'==='x'?'':'0'};
+    delete PAT.bcdefg;
+    const fill=(c,x0,x1,y0,y1)=>{let n=0,t=0;const X0=Math.round(c.x0+x0*c.w),X1=Math.max(X0+1,Math.round(c.x0+x1*c.w)),Y0=Math.round(c.y0+y0*c.h),Y1=Math.max(Y0+1,Math.round(c.y0+y1*c.h));
+      for(let y=Y0;y<Y1;y++)for(let x=X0;x<X1;x++){t++;n+=f2[y*WW+x]}return t?n/t:0};
+    let out='',bad=false;
+    digs.forEach((c,i)=>{
+      let ch;
+      if(c.w<0.28*c.h)ch='1';
+      else{
+        const z={a:fill(c,.2,.8,0,.2),d:fill(c,.2,.8,.8,1),g:fill(c,.2,.8,.4,.6),b:fill(c,.75,1,.12,.46),c:fill(c,.75,1,.54,.88),f:fill(c,0,.25,.12,.46),e:fill(c,0,.25,.54,.88)};
+        const TP={'0':'1111110','2':'1101101','3':'1111001','4':'0110011','5':'1011011','6':'1011111','7':'1110000','8':'1111111','9':'1111011'};
+        const zs=['a','b','c','d','e','f','g'].map(q=>Math.min(1,z[q]/0.7));
+        const sc=Object.entries(TP).map(([d,t])=>[d,zs.reduce((u,v,i)=>u+Math.abs(v-(+t[i])),0)]).sort((p,q)=>p[1]-q[1]);
+        ch=(sc[0][1]<=2.2&&sc[1][1]-sc[0][1]>=0.3)?sc[0][0]:'?';
+        if(dbg)dbg.push({dig:i,box:[c.x0,c.y0,c.w,c.h],z:Object.fromEntries(Object.entries(z).map(([q,v])=>[q,+v.toFixed(2)])),best:sc.slice(0,2).map(p=>p[0]+':'+p[1].toFixed(2)),ch});
+      }
+      if(ch==='?')bad=true;
+      out+=ch;
+      const nx=digs[i+1];
+      if(dots.some(d=>d.y1>bot-0.35*mh&&d.y1<=bot+0.15*mh&&d.x0>=c.x1-0.2*mh&&nx&&d.x1<=nx.x0+0.2*mh))out+='.';
+    });
+    let t2=out;if(!t2.includes('.')&&t2.length>=3)t2=t2.slice(0,-1)+'.'+t2.slice(-1);
+    const v=parseFloat(t2),plaus=v>=20&&v<=400;
+    return{text:out,ok:!bad&&digs.length>=2,score:(bad?0:1000)+(plaus?500:0)+digs.length*10,dots:dots.length};
+  };
+  const a=run(false),b=run(true);
+  return a.score>=b.score?a:b;
+}
 const ld=d=>{const z=n=>String(n).padStart(2,'0');return d.getFullYear()+'-'+z(d.getMonth()+1)+'-'+z(d.getDate())};
 function weighDue(){
   const L=(S.wts||[]).map(w=>w.d).sort(),last=L[L.length-1],now=new Date(),td=ld(now);
@@ -283,7 +360,7 @@ async function openW(file){
   wsrc=document.createElement('canvas');wsrc.width=Math.round(bmp.width*sc);wsrc.height=Math.round(bmp.height*sc);
   wsrc.getContext('2d').drawImage(bmp,0,0,wsrc.width,wsrc.height);wrect=null;
   const m=document.createElement('div');m.className='modal';m.id='wm';
-  m.innerHTML=`<h1>⚖️ Leer la balanza</h1><div class="mu">Tocá y arrastrá sobre la foto para encerrar solo los números del visor.</div><canvas id="wcv" style="width:100%;margin-top:10px;border-radius:12px;touch-action:none"></canvas><div class="row"><input type="number" step="0.1" inputmode="decimal" id="wmk" placeholder="kg" style="width:120px"><span class="mu" id="wmm" style="flex:1"></span></div><button class="full" id="wread">🔍 Leer números</button><button class="full" id="wsave">✓ Guardar peso</button><button class="full sec" id="wcancel">Cancelar</button>`;
+  m.innerHTML=`<h1>⚖️ Leer la balanza</h1><div class="mu">Tocá y arrastrá sobre la foto para dibujar un recuadro justo sobre el visor (la pantallita con los números).</div><canvas id="wcv" style="width:100%;margin-top:10px;border-radius:12px;touch-action:none"></canvas><div class="row"><input type="number" step="0.1" inputmode="decimal" id="wmk" placeholder="kg" style="width:120px"><span class="mu" id="wmm" style="flex:1"></span></div><button class="full" id="wread">🔍 Leer números</button><button class="full" id="wsave">✓ Guardar peso</button><button class="full sec" id="wcancel">Cancelar</button>`;
   document.body.appendChild(m);
   const cv=$('wcv');cv.width=wsrc.width;cv.height=wsrc.height;drawW();
   let st=null;
@@ -292,18 +369,29 @@ async function openW(file){
   cv.onpointermove=e=>{if(!st)return;const p=pos(e);wrect={x:Math.min(st.x,p.x),y:Math.min(st.y,p.y),w:Math.abs(p.x-st.x),h:Math.abs(p.y-st.y)};drawW()};
   cv.onpointerup=()=>{st=null};
 }
+function decodeRect(rc){
+  const x=Math.max(0,Math.round(rc.x)),y=Math.max(0,Math.round(rc.y)),w=Math.min(wsrc.width-x,Math.round(rc.w)),h=Math.min(wsrc.height-y,Math.round(rc.h));
+  if(w<20||h<20)return null;
+  const sc=Math.min(1,380/h),t=document.createElement('canvas');t.width=Math.max(10,Math.round(w*sc));t.height=Math.max(10,Math.round(h*sc));
+  const c=t.getContext('2d');c.drawImage(wsrc,x,y,w,h,0,0,t.width,t.height);
+  const p=c.getImageData(0,0,t.width,t.height).data,g=new Uint8Array(t.width*t.height);
+  for(let i=0;i<g.length;i++)g[i]=Math.round(.299*p[i*4]+.587*p[i*4+1]+.114*p[i*4+2]);
+  return seg7(g,t.width,t.height);
+}
 function readW(){
   const msg=$('wmm');
   if(!wrect||wrect.w<20||wrect.h<20){msg.textContent='Primero encerrá los números con el dedo.';return}
-  const px=wrect.w*.12,py=wrect.h*.12,x=Math.max(0,Math.round(wrect.x-px)),y=Math.max(0,Math.round(wrect.y-py));
-  const w=Math.min(wsrc.width-x,Math.round(wrect.w+2*px)),h=Math.min(wsrc.height-y,Math.round(wrect.h+2*py));
-  const sc=Math.min(1,380/h),t=document.createElement('canvas');t.width=Math.max(10,Math.round(w*sc));t.height=Math.max(10,Math.round(h*sc));
-  const c=t.getContext('2d');c.drawImage(wsrc,x,y,w,h,0,0,t.width,t.height);
-  const px4=c.getImageData(0,0,t.width,t.height).data,g=new Uint8Array(t.width*t.height);
-  for(let i=0;i<g.length;i++)g[i]=Math.round(.299*px4[i*4]+.587*px4[i*4+1]+.114*px4[i*4+2]);
-  const r=seg7(g,t.width,t.height),v=parseKg(r.text);
-  if(v&&r.ok){$('wmk').value=v;msg.textContent='Leí '+v+' kg. Verificá que coincida con la balanza.'}
-  else{if(v)$('wmk').value=v;msg.textContent='No pude leerlo con seguridad'+(r.text?' (vi «'+r.text+'»)':'')+'. Probá encerrando solo los números, o escribilo a mano.'}
+  msg.textContent='Leyendo…';
+  setTimeout(()=>{
+    const cx=wrect.x+wrect.w/2,cy=wrect.y+wrect.h/2,votes={};
+    [0.88,0.94,1,1.06].forEach(k=>{
+      let r=null;try{r=decodeRect({x:cx-wrect.w*k/2,y:cy-wrect.h*k/2,w:wrect.w*k,h:wrect.h*k})}catch(e){}
+      const v=r&&parseKg(r.text);if(v)votes[v]=(votes[v]||0)+1});
+    const best=Object.entries(votes).sort((p,q)=>q[1]-p[1])[0];
+    if(best&&best[1]>=2){$('wmk').value=best[0];msg.textContent='Leí '+best[0]+' kg. Verificá que coincida con la balanza.'}
+    else if(best){$('wmk').value=best[0];msg.textContent='Posible lectura: '+best[0]+' kg. Verificala antes de guardar.'}
+    else msg.textContent='No pude leerlo. Dibujá el recuadro justo sobre el visor (la pantallita), o escribí el peso a mano.';
+  },30);
 }
 function saveFromModal(){
   const v=parseFloat(String($('wmk').value).replace(',','.'));
