@@ -29,6 +29,7 @@ nav button{flex:1;background:transparent;color:var(--mu);border-radius:0;padding
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{background:var(--ac2);color:var(--ac);padding:8px 14px}.chip.on{background:var(--ac);color:var(--on)}
 .wk{display:flex;align-items:center;gap:10px;justify-content:space-between}.wk button{padding:8px 16px}
 .rest{position:fixed;left:8px;right:8px;max-width:624px;margin:0 auto;bottom:calc(58px + env(safe-area-inset-bottom,0px));background:var(--ac);color:var(--on);border-radius:12px;padding:10px 12px;display:none;align-items:center;gap:8px;font-weight:700}.rest span{flex:1}.rest button{background:var(--on);color:var(--ac);padding:6px 10px}
+.demo{margin-top:8px}.imgs{display:flex;gap:6px}.imgs img{flex:1;min-width:0;width:50%;border-radius:8px;background:#fff}.demo a{display:inline-block;margin-top:8px;color:var(--ac)}.th{width:52px;height:52px;object-fit:cover;border-radius:8px;background:#fff}
 </style></head><body><main id="app"></main>
 <div id="rest" class="rest"></div>
 <nav id="nav"></nav>
@@ -70,6 +71,30 @@ async function pdfText(file){
   return out.join('\n');
 }
 
+const IMG='https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/';
+const DEMO=[
+[/curl femoral.*sentado/,'Seated_Leg_Curl'],[/curl femoral|isquio/,'Lying_Leg_Curls'],
+[/prensa/,'Leg_Press'],
+[/press.*inclinado.*mancuerna/,'Incline_Dumbbell_Press'],[/press.*inclinado/,'Leverage_Incline_Chest_Press'],
+[/press.*(banca|plano)/,'Barbell_Bench_Press_-_Medium_Grip'],[/press.*pecho/,'Leverage_Chest_Press'],
+[/press.*(militar|hombro)/,'Dumbbell_Shoulder_Press'],
+[/\bremo\b.*apoyado/,'Dumbbell_Incline_Row'],[/\bremo\b.*(polea|sentado)/,'Seated_Cable_Rows'],[/\bremo\b.*mancuerna/,'One-Arm_Dumbbell_Row'],[/\bremo\b/,'Bent_Over_Barbell_Row'],
+[/jalon/,'Wide-Grip_Lat_Pulldown'],[/dominada/,'Pullups'],
+[/pallof/,'Pallof_Press'],[/dead bug/,'Dead_Bug'],[/plancha/,'Plank'],[/abdominal|crunch/,'Crunches'],
+[/sentadilla.*(banco|cajon)/,'Dumbbell_Squat_To_A_Bench'],[/goblet/,'Goblet_Squat'],[/sentadilla/,'Barbell_Squat'],
+[/hip thrust|empuje de cadera/,'Barbell_Hip_Thrust'],[/puente.*gluteo|glute bridge/,'Barbell_Glute_Bridge'],
+[/elevaciones? lateral/,'Side_Lateral_Raise'],[/face pull/,'Face_Pull'],
+[/rumano/,'Romanian_Deadlift'],[/peso muerto/,'Barbell_Deadlift'],
+[/biceps/,'Dumbbell_Bicep_Curl'],[/triceps/,'Triceps_Pushdown'],
+[/cuadriceps/,'Leg_Extensions'],[/zancada|estocada/,'Dumbbell_Lunges'],
+[/apertura|vuelo|aleteo/,'Dumbbell_Flyes'],[/gemelo|pantorrilla/,'Standing_Calf_Raises'],[/flexion/,'Pushups'],
+[/hiperextension|lumbar/,'Hyperextensions_Back_Extensions']];
+const nz=t=>t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function demoId(name){const n=nz(name),m=DEMO.find(x=>x[0].test(n));return m?m[1]:null}
+function demoHtml(name){
+  const id=demoId(name),yt='https://www.youtube.com/results?search_query='+encodeURIComponent(name+' ejercicio técnica correcta');
+  return (id?`<div class="imgs">${[0,1].map(k=>`<img loading="lazy" alt="${esc(name)} posición ${k+1}" src="${IMG+id}/${k}.jpg" onerror="this.style.display='none'">`).join('')}</div>`:`<div class="mu">No encontré imágenes para este ejercicio.</div>`)+`<a href="${yt}" target="_blank" rel="noopener">▶ Buscar video en YouTube</a><div class="mu" style="font-size:11px">Imágenes: free-exercise-db (dominio público)</div>`;
+}
 const MET={Caminata:3.5,Cinta:4,Bici:5.5,Escalera:7,Movilidad:2.5};
 function kcalCur(){
   const c=S.cur,bw=+S.bw||0;if(!c||!bw)return 0;
@@ -124,7 +149,7 @@ function hoy(){
     return `<h1>${esc(s.name)}</h1><div class="mu">Semana ${S.cur.week||S.week}</div>`+blk('warm','Entrada en calor','',S.cur.warm)+s.ex.map((e,i)=>{
       if(!e.sets)return '';
       const last=lastFor(e.name);
-      return `<div class="card"><h2>${esc(e.name)}</h2><div class="mu">${e.sets} x ${esc(e.reps)}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>x.kg+'kg×'+x.reps).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}`+
+      return `<div class="card"><div class="row" style="margin:0"><h2 style="flex:1">${esc(e.name)}</h2><button class="sec" style="padding:6px 10px" data-demo="w${i}">Ver cómo</button></div><div id="dm-w${i}" class="demo" hidden>${demoHtml(e.name)}</div><div class="mu">${e.sets} x ${esc(e.reps)}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>x.kg+'kg×'+x.reps).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}`+
       S.cur.sets[i].map((x,k)=>`<div class="row"><span class="n">Serie ${k+1}</span><input type="number" inputmode="decimal" placeholder="kg" value="${esc(x.kg)}" data-i="${i}" data-k="${k}" data-f="kg"><input type="number" inputmode="numeric" placeholder="${esc(e.reps.split('-')[0])}" value="${esc(x.reps)}" data-i="${i}" data-k="${k}" data-f="reps"><button class="chk ${x.done?'on':''}" data-d="${i}-${k}">✓</button></div>`).join('')+`<input type="text" placeholder="Nota (ej. subir la próxima)" value="${esc((S.cur.notes||{})[i]||'')}" data-n="${i}" style="margin-top:10px"></div>`;
     }).join('')+blk('card','Cardio',(s.ex.find(e=>!e.sets)||{}).note||'',S.cur.card)+`<div class="card mu">🔥 Gasto estimado hasta ahora: <b id="kc" style="color:var(--tx)">${kcalCur()}</b> kcal · aproximado</div><button class="full" id="fin">Terminar entrenamiento</button><button class="full sec" id="can">Cancelar</button>`;
   }
@@ -154,7 +179,7 @@ function plan(){
   <input type="file" id="pdf" accept="application/pdf" class="full" style="margin-top:10px">
   <textarea id="txt" placeholder="A | Fuerza general&#10;Prensa de piernas 2 x 12-15&#10;Jalón al pecho 2 x 12&#10;Cardio: 10 min de bicicleta" style="margin-top:8px">${esc(S.plan?S.plan.raw:'')}</textarea>
   <button class="full" id="go">Interpretar plan</button><div id="msg" class="mu" style="margin-top:8px"></div></div><div class="card"><h2>Ajustes</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div><div class="card"><h2>Respaldo</h2><div class="mu">Guardá tu historial en un archivo y recuperalo si cambiás de celular o borrás los datos.</div><button class="full" id="exp">Exportar respaldo</button><button class="full sec" id="imp">Importar respaldo</button><input type="file" id="impf" accept=".json,application/json" style="display:none"><div id="bmsg" class="mu" style="margin-top:8px"></div></div>`+
-  (S.plan?S.plan.sessions.map(s=>`<div class="card"><h2>${esc(s.name)}</h2>`+s.ex.map(e=>`<div class="mu">${esc(e.name)} ${e.sets?'· '+e.sets+' x '+esc(e.reps)+(e.side?' por lado':''):''}</div>`).join('')+`</div>`).join(''):'');
+  (S.plan?S.plan.sessions.map((s,si)=>`<div class="card"><h2>${esc(s.name)}</h2>`+s.ex.map((e,j)=>e.sets?`<div class="row" style="margin-top:8px">${demoId(e.name)?`<img class="th" loading="lazy" alt="" src="${IMG+demoId(e.name)}/0.jpg" onerror="this.remove()">`:''}<div class="mu" style="flex:1">${esc(e.name)} · ${e.sets} x ${esc(e.reps)}${e.side?' por lado':''}</div><button class="sec" style="padding:6px 10px" data-demo="p${si}-${j}">Ver</button></div><div id="dm-p${si}-${j}" class="demo" hidden>${demoHtml(e.name)}</div>`:`<div class="mu" style="margin-top:8px">${esc(e.name)}</div>`).join('')+`</div>`).join(''):'');
 }
 function setPlan(t){
   const ss=parse(t),m=$('msg');
@@ -179,6 +204,7 @@ function render(){
 document.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;const d=b.dataset;
   if(d.v){view=d.v;render()}
+  else if(d.demo){const el=$('dm-'+d.demo);if(el)el.hidden=!el.hidden}
   else if(d.r!==undefined){if(+d.r)rl+=+d.r;else stopRest();showRest()}
   else if(b.id==='exp')doExport();
   else if(b.id==='imp')$('impf').click();
