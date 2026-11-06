@@ -277,11 +277,11 @@ function drawW(){
   if(wrect&&wrect.w>2){c.lineWidth=Math.max(4,cv.width/130);c.strokeStyle='#22d3ee';c.strokeRect(wrect.x,wrect.y,wrect.w,wrect.h)}
 }
 async function openW(file){
+  closeW();
   let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'})}catch(e){bmp=await createImageBitmap(file)}
   const sc=Math.min(1,1600/Math.max(bmp.width,bmp.height));
   wsrc=document.createElement('canvas');wsrc.width=Math.round(bmp.width*sc);wsrc.height=Math.round(bmp.height*sc);
   wsrc.getContext('2d').drawImage(bmp,0,0,wsrc.width,wsrc.height);wrect=null;
-  closeW();wsrc=wsrc;
   const m=document.createElement('div');m.className='modal';m.id='wm';
   m.innerHTML=`<h1>⚖️ Leer la balanza</h1><div class="mu">Tocá y arrastrá sobre la foto para encerrar solo los números del visor.</div><canvas id="wcv" style="width:100%;margin-top:10px;border-radius:12px;touch-action:none"></canvas><div class="row"><input type="number" step="0.1" inputmode="decimal" id="wmk" placeholder="kg" style="width:120px"><span class="mu" id="wmm" style="flex:1"></span></div><button class="full" id="wread">🔍 Leer números</button><button class="full" id="wsave">✓ Guardar peso</button><button class="full sec" id="wcancel">Cancelar</button>`;
   document.body.appendChild(m);
@@ -397,7 +397,7 @@ document.addEventListener('input',e=>{
   if(d.set){S[d.set]=+e.target.value||0;save()}
 });
 document.addEventListener('change',async e=>{
-  if(e.target.id==='wph'&&e.target.files[0]){openW(e.target.files[0]);e.target.value='';return}
+  if(e.target.id==='wph'&&e.target.files[0]){const f=e.target.files[0];e.target.value='';openW(f).catch(err=>{closeW();alert('No pude abrir la foto. Probá sacar otra o escribí el peso a mano.')});return}
   if(e.target.id==='pex'){S.pex=e.target.value;render();return}
   if(e.target.id==='impf'&&e.target.files[0]){
     try{const o=JSON.parse(await e.target.files[0].text());if(!o||!Array.isArray(o.hist))throw 0;
