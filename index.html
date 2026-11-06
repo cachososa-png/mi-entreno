@@ -30,6 +30,25 @@ nav button{flex:1;background:transparent;color:var(--mu);border-radius:0;padding
 .wk{display:flex;align-items:center;gap:10px;justify-content:space-between}.wk button{padding:8px 16px}
 .rest{position:fixed;left:8px;right:8px;max-width:624px;margin:0 auto;bottom:calc(58px + env(safe-area-inset-bottom,0px));background:var(--ac);color:var(--on);border-radius:12px;padding:10px 12px;display:none;align-items:center;gap:8px;font-weight:700}.rest span{flex:1}.rest button{background:var(--on);color:var(--ac);padding:6px 10px}
 .demo{margin-top:8px}.imgs{display:flex;gap:6px}.imgs img{flex:1;min-width:0;width:50%;border-radius:8px;background:#fff}.demo a{display:inline-block;margin-top:8px;color:var(--ac)}.th{width:52px;height:52px;object-fit:cover;border-radius:8px;background:#fff}
+
+/* v3: más grande y amigable */
+body{font-size:17px;padding-bottom:100px}main{padding:16px}h1{font-size:26px}h2{font-size:18px}
+button{min-height:52px;border-radius:16px;font-size:17px;touch-action:manipulation}
+.card{border-radius:20px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.full{min-height:58px;font-size:18px;margin-top:10px}
+.row{gap:6px}.row input{height:56px;font-size:22px;font-weight:700;border-radius:14px;width:64px;padding:4px}.row input.rp{width:56px}
+.chk{width:56px;height:56px;min-height:56px;border-radius:50%;font-size:26px;flex:none;padding:0}
+.stp{width:44px;height:56px;min-height:56px;padding:0;font-size:28px;background:var(--ac2);color:var(--ac);border-radius:14px;flex:none}
+.sn{width:30px;height:30px;border-radius:50%;background:var(--ac2);color:var(--ac);display:flex;align-items:center;justify-content:center;font-weight:700;flex:none}
+.chip{min-height:48px;border-radius:24px;padding:10px 18px}
+.wk button{width:56px;padding:0}
+.th{width:64px;height:64px}
+select{height:52px;font-size:17px}
+nav button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12px;min-height:66px;padding:8px 0}nav button b{font-size:24px;font-weight:400}
+.rest{bottom:calc(78px + env(safe-area-inset-bottom,0px));font-size:18px}.rest button{min-height:44px}
+.pbar{position:sticky;top:0;z-index:5;background:var(--bg);padding:6px 0 10px}.pbar .tr{height:14px;border-radius:7px;background:var(--ac2);overflow:hidden}.pbar .tr div{height:100%;background:var(--ac);transition:width .3s}
+.tiles{display:flex;gap:8px;margin-bottom:10px}.tile{flex:1;text-align:center;padding:12px 4px;margin:0}.tile b{display:block;font-size:26px}
+.hero{background:var(--ac);color:var(--on);border-radius:22px;padding:20px;margin-bottom:12px}.big{font-size:52px}
 </style></head><body><main id="app"></main>
 <div id="rest" class="rest"></div>
 <nav id="nav"></nav>
@@ -103,7 +122,9 @@ function kcalCur(){
   [c.warm,c.card].forEach(b=>{if(b&&b.m&&+b.min)k+=(MET[b.m]||4)*bw*(+b.min/60)});
   return Math.round(k);
 }
-function upd(){const el=$('kc');if(el)el.textContent=kcalCur()}
+function setsInfo(){let t=0,d=0;if(S.cur)Object.values(S.cur.sets).forEach(a=>a.forEach(x=>{t++;if(x.done)d++}));return{t,d}}
+function upd(){const el=$('kc');if(el)el.textContent=kcalCur();const i=setsInfo(),pb=$('pb'),pt=$('pt');if(pb)pb.style.width=(i.t?i.d/i.t*100:0)+'%';if(pt)pt.textContent=i.d+' de '+i.t+' series'}
+let justDone=null;
 let rt=null,rl=0;
 function showRest(){const el=$('rest');if(!rt){el.style.display='none';return}
   el.style.display='flex';
@@ -134,7 +155,7 @@ function finish(){
     const note=((S.cur.notes||{})[i]||'').trim();if(d.length||note)ex.push({name:e.name,sets:d,note});
   });
   add('Cardio',S.cur.card);
-  S.hist.unshift({id:Date.now(),week:S.cur.week||S.week,date:S.cur.date,session:s.name,ex,kcal:kcalCur()});stopRest();S.cur=null;save();view='hist';render();
+  S.hist.unshift({id:Date.now(),week:S.cur.week||S.week,date:S.cur.date,session:s.name,ex,kcal:kcalCur()});justDone=S.hist[0];stopRest();S.cur=null;save();view='hist';render();
 }
 
 function blk(k,title,hint,b){
@@ -146,21 +167,21 @@ function hoy(){
     const s=S.plan.sessions[S.cur.si];
     if(!S.cur.warm)S.cur.warm={m:'',min:'',done:false};
     if(!S.cur.card)S.cur.card={m:'',min:'',done:false};
-    return `<h1>${esc(s.name)}</h1><div class="mu">Semana ${S.cur.week||S.week}</div>`+blk('warm','Entrada en calor','',S.cur.warm)+s.ex.map((e,i)=>{
+    const si_=setsInfo();return `<div class="pbar"><div class="row" style="margin:0 0 6px"><h1 style="margin:0;font-size:22px;flex:1">${esc(s.name)}</h1><span class="mu">Semana ${S.cur.week||S.week}</span></div><div class="tr"><div id="pb" style="width:${si_.t?si_.d/si_.t*100:0}%"></div></div><div class="mu" id="pt" style="margin-top:4px">${si_.d} de ${si_.t} series</div></div>`+blk('warm','Entrada en calor','',S.cur.warm)+s.ex.map((e,i)=>{
       if(!e.sets)return '';
       const last=lastFor(e.name);
-      return `<div class="card"><div class="row" style="margin:0"><h2 style="flex:1">${esc(e.name)}</h2><button class="sec" style="padding:6px 10px" data-demo="w${i}">Ver cómo</button></div><div id="dm-w${i}" class="demo" hidden>${demoHtml(e.name)}</div><div class="mu">${e.sets} x ${esc(e.reps)}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>x.kg+'kg×'+x.reps).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}`+
-      S.cur.sets[i].map((x,k)=>`<div class="row"><span class="n">Serie ${k+1}</span><input type="number" inputmode="decimal" placeholder="kg" value="${esc(x.kg)}" data-i="${i}" data-k="${k}" data-f="kg"><input type="number" inputmode="numeric" placeholder="${esc(e.reps.split('-')[0])}" value="${esc(x.reps)}" data-i="${i}" data-k="${k}" data-f="reps"><button class="chk ${x.done?'on':''}" data-d="${i}-${k}">✓</button></div>`).join('')+`<input type="text" placeholder="Nota (ej. subir la próxima)" value="${esc((S.cur.notes||{})[i]||'')}" data-n="${i}" style="margin-top:10px"></div>`;
+      return `<div class="card"><div class="row" style="margin:0">${demoId(e.name)?`<img class="th" alt="" src="${IMG+demoId(e.name)}/0.jpg" onerror="this.remove()">`:''}<h2 style="flex:1">${esc(e.name)}</h2><button class="sec" style="padding:0 14px;min-height:46px" data-demo="w${i}">▶ Ver</button></div><div id="dm-w${i}" class="demo" hidden>${demoHtml(e.name)}</div><div class="mu">${e.sets} x ${esc(e.reps)}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>x.kg+'kg×'+x.reps).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}`+
+      S.cur.sets[i].map((x,k)=>`<div class="row"><span class="sn">${k+1}</span><button class="stp" data-st="${i}|${k}|-1">−</button><input type="number" inputmode="decimal" placeholder="kg" value="${esc(x.kg)}" data-i="${i}" data-k="${k}" data-f="kg"><button class="stp" data-st="${i}|${k}|1">+</button><input class="rp" type="number" inputmode="numeric" placeholder="${esc(e.reps.split('-')[0])}" value="${esc(x.reps)}" data-i="${i}" data-k="${k}" data-f="reps"><button class="chk ${x.done?'on':''}" data-d="${i}-${k}">✓</button></div>`).join('')+`<input type="text" placeholder="Nota (ej. subir la próxima)" value="${esc((S.cur.notes||{})[i]||'')}" data-n="${i}" style="margin-top:10px"></div>`;
     }).join('')+blk('card','Cardio',(s.ex.find(e=>!e.sets)||{}).note||'',S.cur.card)+`<div class="card mu">🔥 Gasto estimado hasta ahora: <b id="kc" style="color:var(--tx)">${kcalCur()}</b> kcal · aproximado</div><button class="full" id="fin">Terminar entrenamiento</button><button class="full sec" id="can">Cancelar</button>`;
   }
   const done=n=>S.hist.some(w=>w.week===S.week&&w.session===n);
   const tot=S.plan.sessions.length,cnt=w=>S.plan.sessions.filter(s=>S.hist.some(h=>h.week===w&&h.session===s.name)).length;
   const ring=p=>`<svg width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" fill="none" stroke="var(--ac2)" stroke-width="8"/><circle cx="36" cy="36" r="30" fill="none" stroke="var(--ac)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(188.5*p).toFixed(1)} 188.5" transform="rotate(-90 36 36)"/><text x="36" y="41" text-anchor="middle" font-size="15" font-weight="700" fill="var(--tx)">${Math.round(p*100)}%</text></svg>`;
-  return `<h1>¿Qué toca hoy?</h1><div class="card"><div class="wk"><button class="sec" data-w="-1">‹</button><h2 style="margin:0">Semana ${S.week} de 4</h2><button class="sec" data-w="1">›</button></div><div style="display:flex;gap:14px;align-items:center;margin-top:12px">${ring(cnt(S.week)/tot)}<div style="flex:1"><div><b>${cnt(S.week)} de ${tot}</b> sesiones</div><div class="mu" style="margin-top:6px">${FOCO[S.week-1]}</div></div></div><div style="display:flex;gap:6px;margin-top:12px">${[1,2,3,4].map(w=>`<div style="flex:1"><div style="height:8px;border-radius:4px;background:var(--ac2);overflow:hidden"><div style="height:100%;width:${cnt(w)/tot*100}%;background:var(--ac)"></div></div><div class="mu" style="text-align:center;margin-top:2px">S${w}</div></div>`).join('')}</div></div>`+S.plan.sessions.map((s,i)=>`<div class="card"><h2>${esc(s.name)}${done(s.name)?' ✓':''}</h2><div class="mu">${s.ex.filter(e=>e.sets).length} ejercicios${done(s.name)?' · hecha esta semana':''}</div><button class="full ${done(s.name)?'sec':''}" data-s="${i}">${done(s.name)?'Repetir':'Empezar'}</button></div>`).join('');
+  return `<h1>¡Vamos! 💪</h1><div class="card"><div class="wk"><button class="sec" data-w="-1">‹</button><h2 style="margin:0">Semana ${S.week} de 4</h2><button class="sec" data-w="1">›</button></div><div style="display:flex;gap:14px;align-items:center;margin-top:12px">${ring(cnt(S.week)/tot)}<div style="flex:1"><div><b>${cnt(S.week)} de ${tot}</b> sesiones</div><div class="mu" style="margin-top:6px">${FOCO[S.week-1]}</div></div></div><div style="display:flex;gap:6px;margin-top:12px">${[1,2,3,4].map(w=>`<div style="flex:1"><div style="height:8px;border-radius:4px;background:var(--ac2);overflow:hidden"><div style="height:100%;width:${cnt(w)/tot*100}%;background:var(--ac)"></div></div><div class="mu" style="text-align:center;margin-top:2px">S${w}</div></div>`).join('')}</div></div>`+S.plan.sessions.map((s,i)=>`<div class="card" style="border-left:6px solid ${done(s.name)?'var(--ac)':'var(--bd)'}"><div class="row" style="margin:0"><span style="font-size:38px">${['🏋️','🔥','💪','⚡'][i%4]}</span><div style="flex:1"><h2>${esc(s.name)}${done(s.name)?' ✓':''}</h2><div class="mu">${s.ex.filter(e=>e.sets).length} ejercicios${done(s.name)?' · hecha esta semana':''}</div></div></div><button class="full ${done(s.name)?'sec':''}" data-s="${i}">${done(s.name)?'Repetir':'Empezar'}</button></div>`).join('');
 }
-function hist(){
+function hist(){const jd=justDone;justDone=null;const ban=jd?`<div class="hero" style="text-align:center"><div class="big">🎉</div><h2 style="font-size:22px">¡Entrenamiento completo!</h2><div style="margin-top:6px">${jd.ex.reduce((a,e)=>a+(e.sets?e.sets.length:0),0)} series · ≈ ${jd.kcal||0} kcal</div></div>`:'';
   if(!S.hist.length)return `<h1>Historial</h1><div class="card mu">Todavía no terminaste ningún entrenamiento.</div>`;
-  return `<h1>Historial</h1>`+S.hist.map(w=>`<div class="card"><div class="row" style="margin:0"><h2 style="flex:1">${esc(w.session)}</h2><button class="del" data-x="${w.id}">Borrar</button></div><div class="mu">${w.week?'Semana '+w.week+' · ':''}${w.date}</div>`+
+  return `<h1>Historial</h1>`+ban+S.hist.map(w=>`<div class="card"><div class="row" style="margin:0"><h2 style="flex:1">${esc(w.session)}</h2><button class="del" data-x="${w.id}">Borrar</button></div><div class="mu">${w.week?'Semana '+w.week+' · ':''}${w.date}</div>`+
     w.ex.map(e=>`<div style="margin-top:6px"><b>${esc(e.name)}</b> <span class="mu">${e.sets?e.sets.map(s=>(s.kg||'—')+'kg×'+s.reps).join(' · '):e.m!==undefined?([e.m,e.min?e.min+' min':''].filter(Boolean).join(' · ')||'hecho'):'hecho'}</span>${e.note?`<div class="mu">📝 ${esc(e.note)}</div>`:''}</div>`).join('')+(w.kcal?`<div class="mu" style="margin-top:8px">🔥 ≈ ${w.kcal} kcal (estimado)</div>`:'')+`</div>`).join('');
 }
 function prog(){
@@ -172,7 +193,7 @@ function prog(){
   const X=i=>pts.length>1?P+i*(W-2*P)/(pts.length-1):W/2,Y=v=>H-P-(v-lo)/(hi-lo)*(H-2*P);
   const line=pts.map((p,i)=>X(i).toFixed(1)+','+Y(p.kg).toFixed(1)).join(' ');
   const d=Math.round((kgs[kgs.length-1]-kgs[0])*10)/10;
-  return `<h1>Progreso</h1><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
+  return `<h1>Progreso</h1><div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
 }
 function plan(){
   return `<h1>Plan</h1><div class="card"><div class="mu">Subí tu PDF o pegá el texto. Después de leerlo, revisá que las sesiones queden bien.</div>
@@ -199,11 +220,12 @@ async function doExport(){
 }
 function render(){
   $('app').innerHTML=view==='hoy'?hoy():view==='hist'?hist():view==='prog'?prog():plan();
-  $('nav').innerHTML=[['hoy','Hoy'],['hist','Historial'],['prog','Progreso'],['plan','Plan']].map(([v,n])=>`<button data-v="${v}" class="${view===v?'on':''}">${n}</button>`).join('');
+  $('nav').innerHTML=[['hoy','🏠','Hoy'],['hist','📋','Historial'],['prog','📈','Progreso'],['plan','⚙️','Plan']].map(([v,ic,n])=>`<button data-v="${v}" class="${view===v?'on':''}"><b>${ic}</b>${n}</button>`).join('');
 }
 document.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;const d=b.dataset;
   if(d.v){view=d.v;render()}
+  else if(d.st){const[a_,k_,dl]=d.st.split('|');const x=S.cur.sets[a_][k_];x.kg=String(Math.max(0,Math.round(((+x.kg||0)+2.5*dl)*10)/10));b.parentNode.querySelector('[data-f="kg"]').value=x.kg;save()}
   else if(d.demo){const el=$('dm-'+d.demo);if(el)el.hidden=!el.hidden}
   else if(d.r!==undefined){if(+d.r)rl+=+d.r;else stopRest();showRest()}
   else if(b.id==='exp')doExport();
