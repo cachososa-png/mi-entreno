@@ -175,7 +175,7 @@ function finish(){
     const note=((S.cur.notes||{})[i]||'').trim();if(d.length||note)ex.push({name:e.name,sets:d,note});
   });
   add('Cardio',S.cur.card);
-  S.hist.unshift({id:Date.now(),week:S.cur.week||S.week,date:S.cur.date,session:s.name,ex,kcal:kcalCur()});justDone=S.hist[0];stopRest();S.cur=null;save();go('hist');
+  S.hist.unshift({id:Date.now(),week:S.cur.week||S.week,date:S.cur.date,session:s.name,ex,kcal:kcalCur(),kcalW:+S.cur.wkc||0,hr:+S.cur.whr||0});justDone=S.hist[0];stopRest();S.cur=null;save();go('hist');
 }
 
 function blk(k,title,hint,b){
@@ -187,22 +187,22 @@ function hoy(){
     const s=S.plan.sessions[S.cur.si];
     if(!S.cur.warm)S.cur.warm={m:'',min:'',done:false};
     if(!S.cur.card)S.cur.card={m:'',min:'',done:false};
-    const si_=setsInfo();return `<div class="pbar"><div class="row" style="margin:0 0 6px"><button class="sec" data-back="1" style="width:48px;min-height:44px;padding:0;font-size:22px;flex:none">←</button><h1 style="margin:0;font-size:22px;flex:1">${esc(s.name)}</h1><span class="mu">Semana ${S.cur.week||S.week}</span></div><div class="tr"><div id="pb" style="width:${si_.t?si_.d/si_.t*100:0}%"></div></div><div class="mu" id="pt" style="margin-top:4px">${si_.d} de ${si_.t} series</div></div>`+blk('warm','Entrada en calor','',S.cur.warm)+s.ex.map((e,i)=>{
+    const si_=setsInfo();return `<div class="pbar"><div class="row" style="margin:0 0 6px"><button class="sec" data-back="1" style="width:48px;min-height:44px;padding:0;font-size:22px;flex:none">←</button><h1 style="margin:0;font-size:22px;flex:1">${esc(s.name)}</h1><span class="mu">Semana ${S.cur.week||S.week}</span></div><div class="tr"><div id="pb" style="width:${si_.t?si_.d/si_.t*100:0}%"></div></div><div class="mu" id="pt" style="margin-top:4px">${si_.d} de ${si_.t} series</div></div>`+(S.cur.watch?'':`<div class="card" style="border-left:6px solid var(--ac)"><div class="row" style="margin:0"><span style="font-size:30px">⌚</span><div style="flex:1"><b>Iniciá «Fuerza» en tu reloj</b><div class="mu">Entrenamiento en interior, antes de empezar</div></div><button class="sec" data-watch="1" style="padding:0 14px;min-height:46px">Listo</button></div></div>`)+blk('warm','Entrada en calor','',S.cur.warm)+s.ex.map((e,i)=>{
       if(!e.sets)return '';
       const last=lastFor(e.name);
       return `<div class="card"><div class="row" style="margin:0">${demoId(e.name)?`<img class="th" alt="" src="${IMG+demoId(e.name)}/0.jpg" onerror="this.remove()">`:''}<h2 style="flex:1">${esc(e.name)}</h2><button class="sec" style="padding:0 14px;min-height:46px" data-demo="w${i}">▶ Ver</button></div><div id="dm-w${i}" class="demo" hidden>${demoHtml(e.name)}</div><div class="mu">${e.sets} x ${esc(e.reps)}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>x.kg+'kg×'+x.reps).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}`+
       S.cur.sets[i].map((x,k)=>`<div class="row"><span class="sn">${k+1}</span><button class="stp" data-st="${i}|${k}|-1">−</button><input type="number" inputmode="decimal" placeholder="kg" value="${esc(x.kg)}" data-i="${i}" data-k="${k}" data-f="kg"><button class="stp" data-st="${i}|${k}|1">+</button><input class="rp" type="number" inputmode="numeric" placeholder="${esc(e.reps.split('-')[0])}" value="${esc(x.reps)}" data-i="${i}" data-k="${k}" data-f="reps"><button class="chk ${x.done?'on':''}" data-d="${i}-${k}">✓</button></div>`).join('')+`<input type="text" placeholder="Nota (ej. subir la próxima)" value="${esc((S.cur.notes||{})[i]||'')}" data-n="${i}" style="margin-top:10px"></div>`;
-    }).join('')+blk('card','Cardio',(s.ex.find(e=>!e.sets)||{}).note||'',S.cur.card)+`<div class="card mu">🔥 Gasto estimado hasta ahora: <b id="kc" style="color:var(--tx)">${kcalCur()}</b> kcal · aproximado</div><button class="full" id="fin">Terminar entrenamiento</button><button class="full sec" id="can">Cancelar</button>`;
+    }).join('')+blk('card','Cardio',(s.ex.find(e=>!e.sets)||{}).note||'',S.cur.card)+`<div class="card mu">🔥 Gasto estimado hasta ahora: <b id="kc" style="color:var(--tx)">${kcalCur()}</b> kcal · aproximado</div><div class="card"><h2>⌚ Datos de tu reloj</h2><div class="mu">Al terminar, mirá el resumen del reloj y cargalo acá (opcional).</div><div class="row"><input type="number" inputmode="numeric" placeholder="kcal" value="${esc(S.cur.wkc||'')}" data-wk="kcal"><span class="mu" style="flex:1">kcal</span><input type="number" inputmode="numeric" placeholder="ppm" value="${esc(S.cur.whr||'')}" data-wk="hr"><span class="mu" style="flex:1">pulso medio</span></div></div><button class="full" id="fin">Terminar entrenamiento</button><button class="full sec" id="can">Cancelar</button>`;
   }
   const done=n=>S.hist.some(w=>w.week===S.week&&w.session===n);
   const tot=S.plan.sessions.length,cnt=w=>S.plan.sessions.filter(s=>S.hist.some(h=>h.week===w&&h.session===s.name)).length;
   const ring=p=>`<svg width="72" height="72" viewBox="0 0 72 72"><circle cx="36" cy="36" r="30" fill="none" stroke="var(--ac2)" stroke-width="8"/><circle cx="36" cy="36" r="30" fill="none" stroke="var(--ac)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${(188.5*p).toFixed(1)} 188.5" transform="rotate(-90 36 36)"/><text x="36" y="41" text-anchor="middle" font-size="15" font-weight="700" fill="var(--tx)">${Math.round(p*100)}%</text></svg>`;
   return `<h1>¡Vamos! 💪</h1><div class="card"><div class="wk"><button class="sec" data-w="-1">‹</button><h2 style="margin:0">Semana ${S.week} de 4</h2><button class="sec" data-w="1">›</button></div><div style="display:flex;gap:14px;align-items:center;margin-top:12px">${ring(cnt(S.week)/tot)}<div style="flex:1"><div><b>${cnt(S.week)} de ${tot}</b> sesiones</div><div class="mu" style="margin-top:6px">${FOCO[S.week-1]}</div></div></div><div style="display:flex;gap:6px;margin-top:12px">${[1,2,3,4].map(w=>`<div style="flex:1"><div style="height:8px;border-radius:4px;background:var(--ac2);overflow:hidden"><div style="height:100%;width:${cnt(w)/tot*100}%;background:var(--ac)"></div></div><div class="mu" style="text-align:center;margin-top:2px">S${w}</div></div>`).join('')}</div></div>`+S.plan.sessions.map((s,i)=>`<div class="card" style="border-left:6px solid ${done(s.name)?'var(--ac)':'var(--bd)'}"><div class="row" style="margin:0"><span style="font-size:38px">${['🏋️','🔥','💪','⚡'][i%4]}</span><div style="flex:1"><h2>${esc(s.name)}${done(s.name)?' ✓':''}</h2><div class="mu">${s.ex.filter(e=>e.sets).length} ejercicios${done(s.name)?' · hecha esta semana':''}</div></div></div><button class="full ${done(s.name)?'sec':''}" data-s="${i}">${done(s.name)?'Repetir':'Empezar'}</button></div>`).join('');
 }
-function hist(){const jd=justDone;justDone=null;const ban=jd?`<div class="hero" style="text-align:center"><div class="big">🎉</div><h2 style="font-size:22px">¡Entrenamiento completo!</h2><div style="margin-top:6px">${jd.ex.reduce((a,e)=>a+(e.sets?e.sets.length:0),0)} series · ≈ ${jd.kcal||0} kcal</div></div>`:'';
+function hist(){const jd=justDone;justDone=null;const ban=jd?`<div class="hero" style="text-align:center"><div class="big">🎉</div><h2 style="font-size:22px">¡Entrenamiento completo!</h2><div style="margin-top:6px">${jd.ex.reduce((a,e)=>a+(e.sets?e.sets.length:0),0)} series · ${jd.kcalW?jd.kcalW+' kcal (reloj)':'≈ '+(jd.kcal||0)+' kcal'}${jd.hr?' · ❤️ '+jd.hr+' ppm':''}</div></div>`:'';
   if(!S.hist.length)return `<h1>Historial</h1><div class="card mu">Todavía no terminaste ningún entrenamiento.</div>`;
   return `<h1>Historial</h1>`+ban+S.hist.map(w=>`<div class="card"><div class="row" style="margin:0"><h2 style="flex:1">${esc(w.session)}</h2><button class="del" data-x="${w.id}">Borrar</button></div><div class="mu">${w.week?'Semana '+w.week+' · ':''}${w.date}</div>`+
-    w.ex.map(e=>`<div style="margin-top:6px"><b>${esc(e.name)}</b> <span class="mu">${e.sets?e.sets.map(s=>(s.kg||'—')+'kg×'+s.reps).join(' · '):e.m!==undefined?([e.m,e.min?e.min+' min':''].filter(Boolean).join(' · ')||'hecho'):'hecho'}</span>${e.note?`<div class="mu">📝 ${esc(e.note)}</div>`:''}</div>`).join('')+(w.kcal?`<div class="mu" style="margin-top:8px">🔥 ≈ ${w.kcal} kcal (estimado)</div>`:'')+`</div>`).join('');
+    w.ex.map(e=>`<div style="margin-top:6px"><b>${esc(e.name)}</b> <span class="mu">${e.sets?e.sets.map(s=>(s.kg||'—')+'kg×'+s.reps).join(' · '):e.m!==undefined?([e.m,e.min?e.min+' min':''].filter(Boolean).join(' · ')||'hecho'):'hecho'}</span>${e.note?`<div class="mu">📝 ${esc(e.note)}</div>`:''}</div>`).join('')+((w.kcal||w.kcalW)?`<div class="mu" style="margin-top:8px">🔥 ${w.kcalW?w.kcalW+' kcal (reloj)'+(w.kcal?' · estimado '+w.kcal:''):'≈ '+w.kcal+' kcal (estimado)'}${w.hr?' · ❤️ '+w.hr+' ppm medio':''}</div>`:'')+`</div>`).join('');
 }
 function seg7(g,W,H,dbg){
   const run=light=>{
@@ -258,6 +258,13 @@ function seg7(g,W,H,dbg){
         if(y<H-1&&dl[p+WW]&&!seen[p+WW]){seen[p+WW]=1;st.push(p+WW)}}
       if(c.n>0)comps.push(c);
     }
+    for(let it=0;it<2;it++){let ch=false;
+      outer:for(let p=0;p<comps.length;p++)for(let q=p+1;q<comps.length;q++){
+        const A=comps[p],B=comps[q],ov=Math.min(A.x1,B.x1)-Math.max(A.x0,B.x0)+1,mw=Math.min(A.x1-A.x0+1,B.x1-B.x0+1);
+        const gap=Math.max(A.y0,B.y0)-Math.min(A.y1,B.y1)-1;
+        if(ov>=0.6*mw&&gap<=0.14*H&&gap>=-2&&Math.max(A.y1,B.y1)-Math.min(A.y0,B.y0)+1<=0.95*H&&Math.min(A.n,B.n)>=60){
+          comps[p]={x0:Math.min(A.x0,B.x0),x1:Math.max(A.x1,B.x1),y0:Math.min(A.y0,B.y0),y1:Math.max(A.y1,B.y1),n:A.n+B.n};comps.splice(q,1);ch=true;break outer}}
+      if(!ch)break}
     if(dbg)dbg.push({light,all:comps.map(c=>[c.x0,c.y0,c.x1-c.x0+1,c.y1-c.y0+1,c.n])});
     const ok=comps.map(c=>({...c,w:c.x1-c.x0+1,h:c.y1-c.y0+1})).filter(c=>c.h<=0.93*H&&c.w<=0.9*W&&(c.w<=1.5*c.h||c.h<0.3*H));
     if(dbg)dbg.push({light,bk,comps:ok.map(c=>[c.x0,c.y0,c.w,c.h,c.n])});
@@ -338,10 +345,11 @@ function weighDue(){
   const days=(new Date(td)-new Date(last))/864e5;
   return days>=7||now.getDay()===0;
 }
-function parseKg(t){
+function parseKg(t,ref){
   if(!t||t.includes('?'))return null;let x=t;
   if(!x.includes('.')&&x.length>=3)x=x.slice(0,-1)+'.'+x.slice(-1);
-  const v=parseFloat(x);return v>=20&&v<=400?v:null;
+  const v=parseFloat(x);if(!(v>=20&&v<=400))return null;
+  if(ref&&Math.abs(v-ref)>25)return null;return v;
 }
 function saveW(kg,img){
   const d=ld(new Date()),v=Math.round(kg*10)/10;
@@ -383,13 +391,14 @@ function readW(){
   if(!wrect||wrect.w<20||wrect.h<20){msg.textContent='Primero encerrá los números con el dedo.';return}
   msg.textContent='Leyendo…';
   setTimeout(()=>{
+    const L=(S.wts||[]).slice().sort((p,q)=>p.d<q.d?-1:1),ref=L.length?L[L.length-1].kg:(S.bw||0);
     const cx=wrect.x+wrect.w/2,cy=wrect.y+wrect.h/2,votes={};
-    [0.88,0.94,1,1.06].forEach(k=>{
-      let r=null;try{r=decodeRect({x:cx-wrect.w*k/2,y:cy-wrect.h*k/2,w:wrect.w*k,h:wrect.h*k})}catch(e){}
-      const v=r&&parseKg(r.text);if(v)votes[v]=(votes[v]||0)+1});
-    const best=Object.entries(votes).sort((p,q)=>q[1]-p[1])[0];
-    if(best&&best[1]>=2){$('wmk').value=best[0];msg.textContent='Leí '+best[0]+' kg. Verificá que coincida con la balanza.'}
-    else if(best){$('wmk').value=best[0];msg.textContent='Posible lectura: '+best[0]+' kg. Verificala antes de guardar.'}
+    [0.85,0.9,0.95,1,1.05,1.1].forEach(k=>[0,-0.03,0.03].forEach(dx=>{
+      let r=null;try{r=decodeRect({x:cx+dx*wrect.w-wrect.w*k/2,y:cy-wrect.h*k/2,w:wrect.w*k,h:wrect.h*k})}catch(e){}
+      const v=r&&parseKg(r.text,ref);if(v)votes[v]=(votes[v]||0)+1}));
+    const e=Object.entries(votes).sort((p,q)=>q[1]-p[1]),best=e[0],second=e[1];
+    if(best&&best[1]>=3&&(!second||best[1]>=2*second[1])){$('wmk').value=best[0];msg.textContent='Leí '+best[0]+' kg. Verificá que coincida con la balanza.'}
+    else if(best){$('wmk').value=best[0];msg.textContent='Posible lectura: '+best[0]+' kg. Revisala bien antes de guardar.'}
     else msg.textContent='No pude leerlo. Dibujá el recuadro justo sobre el visor (la pantallita), o escribí el peso a mano.';
   },30);
 }
@@ -424,7 +433,7 @@ function prog(){
   const X=i=>pts.length>1?P+i*(W-2*P)/(pts.length-1):W/2,Y=v=>H-P-(v-lo)/(hi-lo)*(H-2*P);
   const line=pts.map((p,i)=>X(i).toFixed(1)+','+Y(p.kg).toFixed(1)).join(' ');
   const d=Math.round((kgs[kgs.length-1]-kgs[0])*10)/10;
-  return `<h1>Progreso</h1>${wcard()}<div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
+  return `<h1>Progreso</h1>${wcard()}<div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcalW||w.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
 }
 function plan(){
   return `<h1>Plan</h1><div class="card"><div class="mu">Subí tu PDF o pegá el texto. Después de leerlo, revisá que las sesiones queden bien.</div>
@@ -457,6 +466,7 @@ document.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;const d=b.dataset;
   if(d.v){go(d.v)}
   else if(d.back){back()}
+  else if(d.watch){S.cur.watch=true;save();b.closest('.card').remove()}
   else if(b.id==='wcam')$('wph').click();
   else if(b.id==='wread')readW();
   else if(b.id==='wsave')saveFromModal();
@@ -483,6 +493,7 @@ document.addEventListener('input',e=>{
   if(d.bk&&S.cur){S.cur[d.bk].min=e.target.value;save();upd()}
   if(d.n!==undefined&&S.cur){(S.cur.notes=S.cur.notes||{})[d.n]=e.target.value;save()}
   if(d.set){S[d.set]=+e.target.value||0;save()}
+  if(d.wk&&S.cur){S.cur[d.wk==='kcal'?'wkc':'whr']=e.target.value;save()}
 });
 document.addEventListener('change',async e=>{
   if(e.target.id==='wph'&&e.target.files[0]){const f=e.target.files[0];e.target.value='';openW(f).catch(err=>{closeW();alert('No pude abrir la foto. Probá sacar otra o escribí el peso a mano.')});return}
