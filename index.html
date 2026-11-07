@@ -74,9 +74,40 @@ nav{display:none}.rest{bottom:calc(14px + env(safe-area-inset-bottom,0px))}
 .wmsg.good{background:var(--ac2)}.wmsg.attn,.wmsg.warn{background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.55)}
 @media (prefers-reduced-motion:reduce){.cf{display:none}.chk.on{animation:none}}
 .phcard{width:100%;text-align:left;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:18px;padding:14px;margin:0 0 12px;font-weight:500;font-size:16px;line-height:1.4;min-height:56px;display:block}
+
+/* v14: transiciones, bienvenida animada y pop-up */
+input[type=date]{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px;height:56px}
+#app.pg>*{animation:pgIn .34s cubic-bezier(.2,.8,.2,1) both}
+#app.pg.bk>*{animation-name:pgBk}
+#app.pg>*:nth-child(2){animation-delay:.05s}#app.pg>*:nth-child(3){animation-delay:.1s}#app.pg>*:nth-child(4){animation-delay:.15s}#app.pg>*:nth-child(5){animation-delay:.2s}#app.pg>*:nth-child(n+6){animation-delay:.25s}
+@keyframes pgIn{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes pgBk{from{opacity:0;transform:translateX(-22px)}to{opacity:1;transform:none}}
+#app.pg .grid4 .tile4{animation:tilePop .5s cubic-bezier(.34,1.56,.64,1) both}
+#app.pg .grid4 .tile4:nth-child(2){animation-delay:.07s}#app.pg .grid4 .tile4:nth-child(3){animation-delay:.14s}#app.pg .grid4 .tile4:nth-child(4){animation-delay:.21s}
+@keyframes tilePop{from{opacity:0;transform:scale(.8) translateY(20px)}to{opacity:1;transform:none}}
+button:active{transform:scale(.97);transition:transform .08s}.tile4:active{transform:scale(.95)}
+#splash{position:fixed;inset:0;z-index:100;background:radial-gradient(circle at 50% 40%,#14b8a6 0,#0b3f3a 85%);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;transition:opacity .6s ease,transform .6s ease}
+#splash.out{opacity:0;transform:scale(1.06);pointer-events:none}
+.sp-ic{font-size:84px;position:relative;animation:spBounce 1s cubic-bezier(.34,1.56,.64,1) both}
+.sp-ic:before{content:"";position:absolute;left:50%;top:50%;width:150px;height:150px;margin:-75px 0 0 -75px;border-radius:50%;border:3px solid rgba(255,255,255,.45);animation:spRing 1.8s ease-out infinite}
+.sp-t{font-size:32px;font-weight:800;margin-top:18px;animation:spUp .7s .35s both}
+.sp-s{font-size:18px;opacity:.92;margin-top:8px;animation:spUp .7s .75s both}
+.sp-bar{width:140px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin-top:28px;overflow:hidden}.sp-bar i{display:block;height:100%;background:#fff;animation:spBar 2.2s linear both}
+@keyframes spBounce{from{opacity:0;transform:scale(.3) rotate(-20deg)}to{opacity:1;transform:none}}
+@keyframes spUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes spRing{from{transform:scale(.5);opacity:.9}to{transform:scale(1.9);opacity:0}}
+@keyframes spBar{from{width:0}to{width:100%}}
+.pop{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;animation:fadeIn .25s both}
+.pop .pc{background:var(--card);color:var(--tx);border-radius:26px;padding:26px 22px;max-width:380px;width:100%;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.45);animation:popIn .45s cubic-bezier(.34,1.56,.64,1) both}
+.pop .pe{font-size:64px;line-height:1}.pop .pt{font-size:24px;font-weight:800;margin-top:10px}.pop .pp{font-size:19px;margin-top:10px;line-height:1.35}.pop .pm{margin-top:10px}
+.pop.out{animation:fadeOut .25s both}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes fadeOut{to{opacity:0}}
+@keyframes popIn{from{opacity:0;transform:scale(.7) translateY(30px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){#app.pg>*,#app.pg .grid4 .tile4,.sp-ic,.sp-ic:before,.sp-t,.sp-s,.pop .pc{animation:none!important}}
 </style></head><body><main id="app"></main>
 <div id="rest" class="rest"></div>
 <nav id="nav"></nav>
+<div id="splash"><div class="sp-ic" id="sp-ic">🏋️</div><div class="sp-t" id="sp-t">Bienvenido</div><div class="sp-s" id="sp-s">Comencemos el entrenamiento</div><div class="sp-bar"><i></i></div></div>
 <script>
 const K='mi-entreno-v1';
 let S={plan:null,cur:null,hist:[],week:1,bw:122,rest:90,wts:[],pf:{name:'',h:0,age:0,goalKg:0,goal:'bajar'}},view='home';
@@ -203,14 +234,19 @@ function ctx(){
   if(w){if(w.temp>=28)tags.push('calor');if(w.temp<=12)tags.push('frio');if(RAIN.includes(w.code))tags.push('lluvia');else if(w.code<=1&&w.day)tags.push('sol')}
   const last=S.hist[0]&&S.hist[0].date;
   if(last){const days=Math.round((new Date(ld(d))-new Date(last))/864e5);if(days===1)tags.push('racha');if(days>=5)tags.push('vuelta')}
+  if(holidayToday())tags.push('feriado');if(isBirthday())tags.push('cumple');
   return tags;
 }
 function phrase(kind){
   const bank=PH[kind],tags=ctx().filter(t=>bank[t]);
   const custom=kind==='pr'?[]:(PF().customTxt||'').split('\n').map(x=>x.trim()).filter(Boolean);
-  const pool=(tags.length&&Math.random()<0.7)?bank[pick(tags)]:bank.general.concat(custom);
+  let key=null;
+  if(tags.includes('cumple')&&Math.random()<0.85)key='cumple';
+  else if(tags.includes('feriado')&&Math.random()<0.6)key='feriado';
+  else if(tags.length&&Math.random()<0.7)key=pick(tags);
+  const pool=key?bank[key]:bank.general.concat(custom);
   let p,i=0;do{p=pick(pool);i++}while(p===S.lastPh&&i<6&&pool.length>1);
-  S.lastPh=p;return p;
+  S.lastPh=p;return p.replace('{f}',holidayToday()||'hoy');
 }
 function homePh(){if(!S.hph||Date.now()-S.hph.t>1.5*3600e3)S.hph={t:Date.now(),p:phrase('start')};return S.hph.p}
 async function loadWx(force){
@@ -232,6 +268,57 @@ async function searchCity(){
     ctyList=(await r.json()).results||[];
     m.innerHTML=ctyList.length?ctyList.map((c,i)=>`<button class="sec full" data-cty="${i}" style="min-height:48px;font-size:16px">${esc(c.name)}${c.admin1?', '+esc(c.admin1):''}${c.country?' · '+esc(c.country):''}</button>`).join(''):'<div class="mu">No encontré esa ciudad. Probá con otro nombre.</div>';
   }catch(e){m.innerHTML='<div class="mu">No pude buscar (¿sin internet?). Probá de nuevo más tarde.</div>'}
+}
+PH.start.feriado=['Hoy es feriado ({f}): ¡un día ideal para entrenar sin apuro!','Feriado de {f}: mientras otros descansan, vos sumás.','Con el feriado, entrená tranquilo y después disfrutá el día.'];
+PH.end.feriado=['Feriado bien aprovechado. Ahora, a disfrutar el resto del día.','Entrenaste en pleno feriado: eso es compromiso.'];
+PH.start.cumple=['¡Feliz cumpleaños! Hoy entrenás de festejo.','Un año más fuerte: ¡feliz cumple!','Hoy cumplís años y igual venís a entrenar: ¡qué ejemplo!'];
+PH.end.cumple=['¡Feliz cumpleaños! Ahora a festejar como te mereces.','Sesión de cumpleaños completada. ¡Brindemos!'];
+function ageOf(){const b=PF().birth;if(!b)return null;const d=new Date(b+'T00:00:00'),n=new Date();if(isNaN(d))return null;let a=n.getFullYear()-d.getFullYear();const m=n.getMonth()-d.getMonth();if(m<0||(m===0&&n.getDate()<d.getDate()))a--;return a>=0&&a<120?a:null}
+function isBirthday(){const b=PF().birth;if(!b)return false;const d=new Date(b+'T00:00:00'),n=new Date();return !isNaN(d)&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate()}
+function ageNote(){const a=ageOf();return a!==null?`<div class="mu" style="text-align:right;margin-top:4px">Edad: ${a} años</div>`:(PF().age?`<div class="mu" style="text-align:right;margin-top:4px">Edad guardada: ${PF().age} años · cargá tu fecha de nacimiento</div>`:'')}
+function datosCard(){
+  const p=PF(),a=ageOf(),L=(S.wts||[]).slice().sort((x,y)=>x.d<y.d?-1:1),cur=L.length?L[L.length-1].kg:(S.bw||0),it=[];
+  if(a!==null)it.push(['🎂','Edad',a+' años']);else if(p.age)it.push(['🎂','Edad',p.age+' años']);
+  if(p.h)it.push(['📏','Altura',p.h+' cm']);if(cur)it.push(['⚖️','Peso',cur+' kg']);
+  if(p.h&&cur)it.push(['📊','IMC',(cur/Math.pow(p.h/100,2)).toFixed(1)]);if(p.goalKg)it.push(['🎯','Objetivo',p.goalKg+' kg']);
+  if(!it.length)return '';
+  return `<div class="card"><h2>📋 Mis datos</h2><div class="tiles" style="flex-wrap:wrap;margin:8px 0 0">${it.map(([ic,l,v])=>`<div class="tile" style="flex:1 0 30%;min-width:90px"><div style="font-size:22px">${ic}</div><b style="font-size:20px">${esc(v)}</b><span class="mu">${l}</span></div>`).join('')}</div></div>`;
+}
+function easter(y){const a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31),da=((h+l-7*m+114)%31)+1;return new Date(y,mo-1,da)}
+function holidaysAR(y){
+  const E=easter(y),add=n=>{const d=new Date(E);d.setDate(d.getDate()+n);return d},out={};
+  [[1,1,'Año Nuevo'],[3,24,'Día de la Memoria'],[4,2,'Día de Malvinas'],[5,1,'Día del Trabajador'],[5,25,'Revolución de Mayo'],[6,17,'Paso a la Inmortalidad de Güemes'],[6,20,'Día de la Bandera'],[7,9,'Día de la Independencia'],[8,17,'Paso a la Inmortalidad de San Martín'],[10,12,'Día del Respeto a la Diversidad Cultural'],[11,20,'Día de la Soberanía Nacional'],[12,8,'Inmaculada Concepción'],[12,25,'Navidad']].forEach(([m,d,n])=>out[m+'-'+d]=n);
+  [[-48,'Carnaval'],[-47,'Carnaval'],[-2,'Viernes Santo']].forEach(([k,n])=>{const d=add(k);out[(d.getMonth()+1)+'-'+d.getDate()]=n});
+  return out;
+}
+function holidayToday(){
+  const d=new Date(),k=(d.getMonth()+1)+'-'+d.getDate(),y=d.getFullYear();
+  if(PF().cc&&PF().cc!=='AR')return '';
+  const map=(S.hol&&S.hol.y===y)?S.hol.map:holidaysAR(y);
+  return map[k]||'';
+}
+async function loadHol(){
+  const y=new Date().getFullYear();if(PF().cc&&PF().cc!=='AR')return;
+  if(S.hol&&S.hol.y===y&&Date.now()-S.hol.t<7*864e5)return;
+  try{const ac=new AbortController();setTimeout(()=>ac.abort(),7000);
+    const r=await fetch('https://nolaborables.com.ar/api/v2/feriados/'+y,{signal:ac.signal}),j=await r.json();
+    if(Array.isArray(j)&&j.length>5){const map={};j.forEach(f=>{map[f.mes+'-'+f.dia]=f.motivo});S.hol={y,t:Date.now(),map};save()}}catch(e){}
+}
+function popup(emoji,title,text,meta,btn){
+  const old=document.querySelector('.pop');if(old)old.remove();
+  const d=document.createElement('div');d.className='pop';
+  d.innerHTML=`<div class="pc"><div class="pe">${emoji}</div><div class="pt">${esc(title)}</div><div class="pp">${esc(text)}</div>${meta?`<div class="mu pm">${esc(meta)}</div>`:''}<button class="full" id="popok">${esc(btn||'¡A entrenar!')}</button></div>`;
+  const close=()=>{d.classList.add('out');setTimeout(()=>d.remove(),260)};
+  d.addEventListener('click',e=>{if(e.target===d||e.target.id==='popok')close()});
+  document.body.appendChild(d);setTimeout(close,9000);
+}
+function startPopup(){
+  const t=ctx(),n=nm(),w=wxNow(),bd=isBirthday(),hol=holidayToday();
+  const emoji=bd?'🎂':t.includes('lluvia')?'🌧️':t.includes('calor')?'🔥':t.includes('frio')?'🧣':t.includes('mañana')?'🌅':t.includes('tarde')?'💪':'🌙';
+  const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const meta=[dias[new Date().getDay()],w?wxIcon(w.code,w.day)+' '+Math.round(w.temp)+'°C':'',hol?'Feriado: '+hol:''].filter(Boolean).join(' · ');
+  popup(emoji,bd?'¡Feliz cumpleaños'+(n?', '+n:'')+'!':'¡Vamos'+(n?', '+n:'')+'!',phrase('start'),meta,'¡A entrenar!');
+  if(bd)confetti(30);
 }
 function toast(t,gold){const e=document.createElement('div');e.className='toast'+(gold?' gold':'');e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),3000)}
 function confetti(n){const c=['🎉','✨','🏅','💪','⭐','🔥'];for(let i=0;i<(n||28);i++){const e=document.createElement('span');e.className='cf';e.textContent=pick(c);e.style.left=Math.random()*100+'vw';e.style.animationDelay=Math.random()*.7+'s';e.style.fontSize=(14+Math.random()*16)+'px';document.body.appendChild(e);setTimeout(()=>e.remove(),3400)}}
@@ -255,13 +342,13 @@ function wFeedback(prev,kg){
   return{k:'attn',t:(goal==='bajar'?'Subiste '+f(a)+' kg desde la última pesada':'Bajaste '+f(a)+' kg desde la última pesada')+n+'. Puede ser retención de líquidos o la hora del día: mirá la tendencia de varias semanas, no una sola pesada.'};
 }
 function go(v){if(v===view)return;view=v;history.pushState({v},'');render();scrollTo(0,0)}
-function back(){if(history.state&&history.state.v&&history.state.v!=='home')history.back();else{view='home';render()}}
+function back(){if(history.state&&history.state.v&&history.state.v!=='home')history.back();else{navBack=true;view='home';render()}}
 function bb(){return (view==='hoy'&&S.cur&&S.plan)?'':'<button class="sec" data-back="1" style="margin-bottom:10px;min-height:48px">← Inicio</button>'}
 function home(){
   const c=S.cur&&S.plan?S.plan.sessions[S.cur.si]:null,inf=setsInfo(),tot=S.plan?S.plan.sessions.length:0;
   const wk=S.plan?S.plan.sessions.filter(x=>S.hist.some(h=>h.week===S.week&&h.session===x.name)).length:0;
   const T=(v,ic,t,sub)=>`<button class="tile4" data-v="${v}"><span class="ic">${ic}</span><b>${t}</b><span class="sub">${sub}</span></button>`;
-  return `<h1>${greet()}</h1><div class="mu" style="margin:-4px 0 10px">${wxLine()}Comencemos el entrenamiento</div><button class="phcard" data-ph="1">💬 ${esc(homePh())}</button>`+(!nm()?`<button class="sec full" data-v="plan" style="margin:0 0 10px">👤 Personalizá tu perfil (nombre, altura, objetivo)</button>`:'')+(weighDue()?`<button class="hero2" data-v="prog">⚖️ ${new Date().getDay()===0?'Hoy es domingo: toca pesarte':'Toca pesarte esta semana'}<b>Tocá para cargar tu peso</b></button>`:'')+(c?`<button class="hero2" data-v="hoy"><div>▶ Entrenamiento en curso</div><b>${esc(c.name)}</b><div>${inf.d} de ${inf.t} series · tocá para continuar</div></button>`:'')+`<div class="grid4">`+T('hoy','🏋️','Entrenar',c?'En curso':(S.plan?'Semana '+S.week+' · '+wk+' de '+tot:'Sin plan todavía'))+T('hist','📋','Historial',S.hist.length+(S.hist.length===1?' entreno':' entrenos'))+T('prog','📈','Progreso','Pesos y calorías')+T('plan','⚙️','Ajustes','Perfil, plan y respaldo')+`</div>`;
+  return `<h1>${greet()}</h1><div class="mu" style="margin:-4px 0 10px">${wxLine()}Comencemos el entrenamiento</div>`+(!nm()?`<button class="sec full" data-v="plan" style="margin:0 0 10px">👤 Personalizá tu perfil (nombre, altura, objetivo)</button>`:'')+(weighDue()?`<button class="hero2" data-v="prog">⚖️ ${new Date().getDay()===0?'Hoy es domingo: toca pesarte':'Toca pesarte esta semana'}<b>Tocá para cargar tu peso</b></button>`:'')+(c?`<button class="hero2" data-v="hoy"><div>▶ Entrenamiento en curso</div><b>${esc(c.name)}</b><div>${inf.d} de ${inf.t} series · tocá para continuar</div></button>`:'')+`<div class="grid4">`+T('hoy','🏋️','Entrenar',c?'En curso':(S.plan?'Semana '+S.week+' · '+wk+' de '+tot:'Sin plan todavía'))+T('hist','📋','Historial',S.hist.length+(S.hist.length===1?' entreno':' entrenos'))+T('prog','📈','Progreso','Pesos y calorías')+T('plan','⚙️','Ajustes','Perfil, plan y respaldo')+`</div>`;
 }
 function setsInfo(){let t=0,d=0;if(S.cur)Object.values(S.cur.sets).forEach(a=>a.forEach(x=>{t++;if(x.done)d++}));return{t,d}}
 function upd(){const el=$('kc');if(el)el.textContent=kcalCur();const i=setsInfo(),pb=$('pb'),pt=$('pt');if(pb)pb.style.width=(i.t?i.d/i.t*100:0)+'%';if(pt)pt.textContent=i.d+' de '+i.t+' series'}
@@ -285,7 +372,7 @@ function start(si){
     sets[i]=Array.from({length:e.sets},(_,k)=>({kg:last?(last[k]||last[last.length-1]).kg:'',reps:'',done:false}));
   });
   S.cur={si,week:S.week,date:new Date().toISOString().slice(0,10),sets,cardio,warm:{m:'',min:'',done:false},card:{m:'',min:'',done:false},notes:{}};save();render();
-  toast('¡Vamos'+(nm()?', '+nm():'')+'! '+phrase('start'));
+  startPopup();
 }
 function finish(){
   const s=S.plan.sessions[S.cur.si],ex=[];
@@ -552,17 +639,17 @@ function wcard(){
 }
 function prog(){
   const names=[...new Set(S.hist.flatMap(w=>w.ex.filter(e=>e.sets&&e.sets.length).map(e=>e.name)))];
-  if(!names.length)return `<h1>Progreso</h1>${wcard()}<div class="card mu">Cuando termines entrenamientos vas a ver acá cómo evoluciona el peso de cada ejercicio.</div>`;
+  if(!names.length)return `<h1>Progreso</h1>${wcard()}${datosCard()}<div class="card mu">Cuando termines entrenamientos vas a ver acá cómo evoluciona el peso de cada ejercicio.</div>`;
   if(!names.includes(S.pex))S.pex=names[0];
   const pts=S.hist.slice().reverse().map(w=>{const e=w.ex.find(x=>x.name===S.pex&&x.sets&&x.sets.length);return e?{w:w.week,kg:Math.max(...e.sets.map(s=>+s.kg||0))}:null}).filter(Boolean);
   const W=300,H=150,P=26,kgs=pts.map(p=>p.kg),mx=Math.max(...kgs),mn=Math.min(...kgs),sp=(mx-mn)||10,lo=mn-sp*.3,hi=mx+sp*.3;
   const X=i=>pts.length>1?P+i*(W-2*P)/(pts.length-1):W/2,Y=v=>H-P-(v-lo)/(hi-lo)*(H-2*P);
   const line=pts.map((p,i)=>X(i).toFixed(1)+','+Y(p.kg).toFixed(1)).join(' ');
   const d=Math.round((kgs[kgs.length-1]-kgs[0])*10)/10;
-  return `<h1>Progreso</h1>${wcard()}<div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcalW||w.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
+  return `<h1>Progreso</h1>${wcard()}${datosCard()}<div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcalW||w.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
 }
 function plan(){
-  return `<h1>Ajustes</h1>`+`<div class="card"><h2>👤 Mi perfil</h2><div class="row"><span style="flex:1">Nombre</span><input type="text" value="${esc(PF().name||'')}" data-pf="name" style="width:160px;font-size:18px"></div><div class="row"><span style="flex:1">Altura (cm)</span><input type="number" inputmode="numeric" value="${PF().h||''}" data-pf="h"></div><div class="row"><span style="flex:1">Edad</span><input type="number" inputmode="numeric" value="${PF().age||''}" data-pf="age"></div><div class="row"><span style="flex:1">Peso objetivo (kg)</span><input type="number" inputmode="decimal" value="${PF().goalKg||''}" data-pf="goalKg"></div><div class="row"><span style="flex:1">Mi objetivo</span><select data-pf="goal" style="width:160px">${[['bajar','Bajar de peso'],['mantener','Mantener'],['subir','Subir de peso']].map(([v,t])=>`<option value="${v}" ${PF().goal===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="mu" style="margin-top:10px">Mis frases motivadoras (una por línea, opcional)</div><textarea data-pf="customTxt" style="min-height:90px;font-size:16px;margin-top:6px">${esc(PF().customTxt||'')}</textarea>${PF().h&&S.bw?`<div class="mu" style="margin-top:8px">IMC: ${(S.bw/Math.pow(PF().h/100,2)).toFixed(1)}</div>`:''}</div><div class="card"><h2>📍 Mi ciudad (clima)</h2><div class="mu">${PF().city?'Actual: '+esc(PF().city):'Elegí tu ciudad para que las frases tengan en cuenta el clima.'}</div><div class="row"><input type="text" id="cty" placeholder="Ej: Pilar" style="width:auto;flex:1;font-size:18px"><button class="sec" id="ctyb">Buscar</button></div><div id="ctyr"></div></div><div class="card"><h2>⚙️ Preferencias</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div><h2 id="plansec" style="margin:22px 0 10px;font-size:20px">📄 Mi plan de entrenamiento</h2><div class="card"><div class="mu">Subí tu PDF o pegá el texto. Después de leerlo, revisá que las sesiones queden bien.</div>
+  return `<h1>Ajustes</h1>`+`<div class="card"><h2>👤 Mi perfil</h2><div class="row"><span style="flex:1">Nombre</span><input type="text" value="${esc(PF().name||'')}" data-pf="name" style="width:160px;font-size:18px"></div><div class="row"><span style="flex:1">Altura (cm)</span><input type="number" inputmode="numeric" value="${PF().h||''}" data-pf="h"></div><div class="row"><span style="flex:1">Fecha de nacimiento</span><input type="date" value="${esc(PF().birth||'')}" data-pf="birth" style="width:165px;font-size:16px"></div>${ageNote()}<div class="row"><span style="flex:1">Peso objetivo (kg)</span><input type="number" inputmode="decimal" value="${PF().goalKg||''}" data-pf="goalKg"></div><div class="row"><span style="flex:1">Mi objetivo</span><select data-pf="goal" style="width:160px">${[['bajar','Bajar de peso'],['mantener','Mantener'],['subir','Subir de peso']].map(([v,t])=>`<option value="${v}" ${PF().goal===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="mu" style="margin-top:10px">Mis frases motivadoras (una por línea, opcional)</div><textarea data-pf="customTxt" style="min-height:90px;font-size:16px;margin-top:6px">${esc(PF().customTxt||'')}</textarea>${PF().h&&S.bw?`<div class="mu" style="margin-top:8px">IMC: ${(S.bw/Math.pow(PF().h/100,2)).toFixed(1)}</div>`:''}</div><div class="card"><h2>📍 Mi ciudad (clima)</h2><div class="mu">${PF().city?'Actual: '+esc(PF().city):'Elegí tu ciudad para que las frases tengan en cuenta el clima.'}</div><div class="row"><input type="text" id="cty" placeholder="Ej: Pilar" style="width:auto;flex:1;font-size:18px"><button class="sec" id="ctyb">Buscar</button></div><div id="ctyr"></div></div><div class="card"><h2>⚙️ Preferencias</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div><h2 id="plansec" style="margin:22px 0 10px;font-size:20px">📄 Mi plan de entrenamiento</h2><div class="card"><div class="mu">Subí tu PDF o pegá el texto. Después de leerlo, revisá que las sesiones queden bien.</div>
   <input type="file" id="pdf" accept="application/pdf" class="full" style="margin-top:10px">
   <textarea id="txt" placeholder="A | Fuerza general&#10;Prensa de piernas 2 x 12-15&#10;Jalón al pecho 2 x 12&#10;Cardio: 10 min de bicicleta" style="margin-top:8px">${esc(S.plan?S.plan.raw:'')}</textarea>
   <button class="full" id="go">Interpretar plan</button><div id="msg" class="mu" style="margin-top:8px"></div></div>`+
@@ -584,7 +671,9 @@ async function doExport(){
     m.textContent='Respaldo listo.'}
   catch(e){m.textContent=e&&e.code==='declined'?'Cancelaste la descarga.':'No pude guardar el respaldo.'}
 }
-function render(){
+let lastView=null,navBack=false;
+function render(){const chg=view!==lastView;lastView=view;renderInner();const ap=$('app');ap.className='';if(chg){void ap.offsetWidth;ap.className='pg'+(navBack?' bk':'')}navBack=false}
+function renderInner(){
   $('app').innerHTML=(view==='home'?home():bb()+(view==='hoy'?hoy():view==='hist'?hist():view==='prog'?prog():plan()));
   $('nav').innerHTML=[['hoy','🏠','Hoy'],['hist','📋','Historial'],['prog','📈','Progreso'],['plan','⚙️','Ajustes']].map(([v,ic,n])=>`<button data-v="${v}" class="${view===v?'on':''}"><b>${ic}</b>${n}</button>`).join('');
 }
@@ -594,7 +683,7 @@ document.addEventListener('click',async e=>{
   else if(d.back){back()}
   else if(d.gp){go('plan');setTimeout(()=>{const e=$('plansec');if(e)e.scrollIntoView()},60)}
   else if(b.id==='ctyb')searchCity();
-  else if(d.cty!==undefined){const c=ctyList[+d.cty];if(c){const p=PF();p.city=c.name+(c.admin1?', '+c.admin1:'');p.lat=c.latitude;p.lon=c.longitude;S.wx=null;S.hph=null;save();render();loadWx(true)}}
+  else if(d.cty!==undefined){const c=ctyList[+d.cty];if(c){const p=PF();p.city=c.name+(c.admin1?', '+c.admin1:'');p.lat=c.latitude;p.lon=c.longitude;p.cc=c.country_code||'';S.wx=null;S.hph=null;save();render();loadWx(true)}}
   else if(d.ph){S.hph={t:Date.now(),p:phrase('start')};save();render()}
   else if(d.add!==undefined){const a=S.cur.sets[d.add],l=a[a.length-1];a.push({kg:l?l.kg:'',reps:'',done:false});save();render()}
   else if(d.rm!==undefined){const a=S.cur.sets[d.rm];if(a.length>1&&!a[a.length-1].done){a.pop();save();render()}else toast('Solo se puede quitar una serie que no esté marcada')}
@@ -626,7 +715,7 @@ document.addEventListener('input',e=>{
   if(d.n!==undefined&&S.cur){(S.cur.notes=S.cur.notes||{})[d.n]=e.target.value;save()}
   if(d.set){S[d.set]=+e.target.value||0;save()}
   if(d.wk&&S.cur){S.cur[d.wk==='kcal'?'wkc':'whr']=e.target.value;save()}
-  if(d.pf){PF()[d.pf]=(e.target.type==='number')?(+e.target.value||0):e.target.value;save()}
+  if(d.pf){PF()[d.pf]=(e.target.type==='number')?(+e.target.value||0):e.target.value;save();if(d.pf==='birth')render()}
 });
 document.addEventListener('change',async e=>{
   if(e.target.id==='wph'&&e.target.files[0]){const f=e.target.files[0];e.target.value='';openW(f).catch(err=>{closeW();alert('No pude abrir la foto. Probá sacar otra o escribí el peso a mano.')});return}
@@ -642,7 +731,16 @@ document.addEventListener('change',async e=>{
   try{const t=await pdfText(e.target.files[0]);$('txt').value=t;setPlan(t)}
   catch(err){$('msg').textContent='No pude leer el PDF. Pegá el texto a mano.'}
 });
-history.replaceState({v:'home'},'');addEventListener('popstate',e=>{closeW();view=(e.state&&e.state.v)||'home';render();scrollTo(0,0)});
-render();loadWx();
+history.replaceState({v:'home'},'');addEventListener('popstate',e=>{closeW();navBack=true;view=(e.state&&e.state.v)||'home';render();scrollTo(0,0)});
+render();loadWx();loadHol();
+(function(){const sp=$('splash');if(!sp)return;
+  const n=nm(),bd=isBirthday(),reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $('sp-ic').textContent=bd?'🎂':'🏋️';
+  $('sp-t').textContent=bd?'¡Feliz cumpleaños'+(n?', '+n:'')+'!':'Bienvenido'+(n?', '+n:'');
+  $('sp-s').textContent=bd?'Hoy el mejor regalo es cuidarte 💪':'Comencemos el entrenamiento';
+  const close=()=>{if(!sp.isConnected)return;sp.classList.add('out');setTimeout(()=>sp.remove(),650)};
+  sp.addEventListener('click',close);setTimeout(close,reduce?900:2400);
+  if(bd&&!reduce)setTimeout(()=>confetti(40),700);
+})();
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script></body></html>
