@@ -184,7 +184,7 @@ function parse(t){
       const ex=makeExercise(cells[0],setCell[1],cells[2],cells.slice(3).join(' '));
       if(ex){cur.ex.push(ex);prev='';continue}
     }
-    m=clean.match(/^(.+?)\s+(\d+)\s*(?:series?|sets?)?\s*(?:[x×]|de)\s*(\d+(?:\s*[-–]\s*\d+)?)(.*)$/i);
+    m=clean.match(/^(.+?)(?:\s*:\s*|\s+[–—-]\s+|\s+)(\d+)\s*(?:series?|sets?)?\s*(?:[x×]|de)\s*(\d+(?:\s*[-–]\s*\d+)?)(.*)$/i);
     if(m){let name=cleanPlanName(m[1]);if(/^[a-záéíóúñ]/.test(name)&&prev)name=cleanPlanName(prev+' '+name);
       const ex=makeExercise(name,m[2],m[3]+m[4],m[4]);if(ex){cur.ex.push(ex);prev='';continue}}
     m=clean.match(/^(.+?)\s+(\d+)\s+(\d+(?:\s*[-–]\s*\d+)?)(.*)$/i);
@@ -208,10 +208,18 @@ async function pdfText(file){
   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,out=[];
   for(let p=1;p<=pdf.numPages;p++){
-    const c=await(await pdf.getPage(p)).getTextContent(),rows={};
+    const page=await pdf.getPage(p),c=await page.getTextContent(),rows={};
+    const pageText=c.items.map(i=>i.str).join(' '),splitSessions=/\bA\s*\|/i.test(pageText)&&/\bB\s*\|/i.test(pageText),mid=page.getViewport({scale:1}).width/2;
     c.items.forEach(i=>{const y=Math.round(i.transform[5]/4);(rows[y]=rows[y]||[]).push(i)});
-    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>out.push(
-      rows[y].sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()));
+    const rowText=items=>items.sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{
+      const items=rows[y].sort((a,b)=>a.transform[4]-b.transform[4]);
+      if(splitSessions){
+        const left=items.filter(i=>i.transform[4]<mid),right=items.filter(i=>i.transform[4]>=mid);
+        if(left.length&&right.length){out.push(rowText(left),rowText(right));return}
+      }
+      out.push(rowText(items));
+    });
   }
   return out.join('\n');
 }
@@ -225,7 +233,9 @@ const DEMO=[
 [/press.*(militar|hombro)/,'Dumbbell_Shoulder_Press'],
 [/\bremo\b.*apoyado/,'Dumbbell_Incline_Row'],[/\bremo\b.*(polea|sentado)/,'Seated_Cable_Rows'],[/\bremo\b.*mancuerna/,'One-Arm_Dumbbell_Row'],[/\bremo\b/,'Bent_Over_Barbell_Row'],
 [/jalon/,'Wide-Grip_Lat_Pulldown'],[/dominada/,'Pullups'],
-[/pallof/,'Pallof_Press'],[/dead bug/,'Dead_Bug'],[/plancha/,'Plank'],[/abdominal|crunch/,'Crunches'],
+[/pallof/,'Pallof_Press'],[/dead bug/,'Dead_Bug'],[/wood\s*chop/,'Standing_Cable_Wood_Chop'],[/reverse\s*crunch/,'Reverse_Crunch'],
+[/flutter\s*kicks?/,'Flutter_Kicks'],[/mountain\s*climbers?/,'Mountain_Climbers'],[/superman/,'Superman'],[/hanging\s+leg\s+raise/,'Hanging_Leg_Raise'],[/leg\s+raise|elevacion\s+de\s+piernas/,'Flat_Bench_Lying_Leg_Raise'],
+[/plancha|plank/,'Plank'],[/abdominal|crunch/,'Crunches'],
 [/sentadilla.*(banco|cajon)/,'Dumbbell_Squat_To_A_Bench'],[/goblet/,'Goblet_Squat'],[/sentadilla/,'Barbell_Squat'],
 [/hip thrust|empuje de cadera/,'Barbell_Hip_Thrust'],[/puente.*gluteo|glute bridge/,'Barbell_Glute_Bridge'],
 [/elevaciones? lateral/,'Side_Lateral_Raise'],[/face pull/,'Face_Pull'],
@@ -237,8 +247,9 @@ const DEMO=[
 const nz=t=>t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function demoId(name){const n=nz(name),m=DEMO.find(x=>x[0].test(n));return m?m[1]:null}
 function demoHtml(name){
-  const id=demoId(name),yt='https://www.youtube.com/results?search_query='+encodeURIComponent(name+' ejercicio técnica correcta');
-  return (id?`<div class="imgs">${[0,1].map(k=>`<img loading="lazy" alt="${esc(name)} posición ${k+1}" src="${IMG+id}/${k}.jpg" onerror="this.style.display='none'">`).join('')}</div>`:`<div class="mu">No encontré imágenes para este ejercicio.</div>`)+`<a href="${yt}" target="_blank" rel="noopener">▶ Buscar video en YouTube</a><div class="mu" style="font-size:11px">Imágenes: free-exercise-db (dominio público)</div>`;
+  const id=demoId(name),yt='https://www.youtube.com/results?search_query='+encodeURIComponent(name+' ejercicio técnica correcta'),imgSearch='https://www.google.com/search?tbm=isch&q='+encodeURIComponent(name+' ejercicio');
+  const images=id?`<div class="imgs">${[0,1].map(k=>`<img loading="lazy" alt="${esc(name)} posición ${k+1}" src="${IMG+id}/${k}.jpg" onerror="this.style.display='none'">`).join('')}</div>`:`<div class="mu">No encontré imágenes integradas para este ejercicio.</div>`;
+  return images+`<a href="${imgSearch}" target="_blank" rel="noopener">🔎 Buscar ${id?'más ':''}imágenes</a><a href="${yt}" target="_blank" rel="noopener">▶ Buscar video en YouTube</a>`+(id?`<div class="mu" style="font-size:11px">Imágenes: free-exercise-db (dominio público)</div>`:'');
 }
 const MET={Caminata:3.5,Cinta:4,Bici:5.5,Escalera:7,Movilidad:2.5};
 function kcalCur(){
@@ -1258,8 +1269,8 @@ function prog(){
   return `<h1>Progreso</h1>${wcard()}${calCard()}${recCard()}${plateauCard()}${balCard()}${segCard()}${fotosCard()}${datosCard()}${semCard()}${logrosCard()}<div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcalW||w.kcal||0),0)+(S.extra||[]).reduce((a,x)=>a+(x.kcalW||x.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
 }
 function plan(){
-  return `<h1>Ajustes</h1>`+`<div class="card"><h2>👤 Mi perfil</h2><div class="row"><span style="flex:1">Nombre</span><input type="text" value="${esc(PF().name||'')}" data-pf="name" style="width:160px;font-size:18px"></div><div class="row"><span style="flex:1">Altura (cm)</span><input type="number" inputmode="numeric" value="${PF().h||''}" data-pf="h"></div><div class="row"><span style="flex:1">Fecha de nacimiento</span><input type="date" value="${esc(PF().birth||'')}" data-pf="birth" style="width:165px;font-size:16px"></div>${ageNote()}<div class="row"><span style="flex:1">Peso objetivo (kg)</span><input type="number" inputmode="decimal" value="${PF().goalKg||''}" data-pf="goalKg"></div><div class="row"><span style="flex:1">Mi objetivo</span><select data-pf="goal" style="width:160px">${[['bajar','Bajar de peso'],['mantener','Mantener'],['subir','Subir de peso']].map(([v,t])=>`<option value="${v}" ${PF().goal===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="mu" style="margin-top:10px">Mis frases motivadoras (una por línea, opcional)</div><textarea data-pf="customTxt" style="min-height:90px;font-size:16px;margin-top:6px">${esc(PF().customTxt||'')}</textarea>${PF().h&&S.bw?`<div class="mu" style="margin-top:8px">IMC: ${(S.bw/Math.pow(PF().h/100,2)).toFixed(1)}</div>`:''}</div><div class="card"><h2>📍 Mi ciudad (clima)</h2><div class="mu">${PF().city?'Actual: '+esc(PF().city):'Elegí tu ciudad para que las frases tengan en cuenta el clima.'}</div><div class="row"><input type="text" id="cty" placeholder="Ej: Pilar" style="width:auto;flex:1;font-size:18px"><button class="sec" id="ctyb">Buscar</button></div><div id="ctyr"></div></div><div class="card"><h2>⚙️ Preferencias</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="row"><span style="flex:1">🔆 Mantener la pantalla encendida mientras entrenás</span><input type="checkbox" data-opt="wake" ${OPT().wake?'checked':''}></div><div class="row"><span style="flex:1">🔔 Sonido al terminar el descanso</span><input type="checkbox" data-opt="sound" ${OPT().sound?'checked':''}></div><div class="row"><span style="flex:1">📳 Vibración al terminar el descanso</span><input type="checkbox" data-opt="vib" ${OPT().vib?'checked':''}></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div>${uiCard()}<h2 id="plansec" style="margin:22px 0 10px;font-size:20px">📄 Mi plan de entrenamiento</h2><div class="card"><div class="mu">Subí tu PDF o pegá el texto. Después de leerlo, revisá que las sesiones queden bien.</div>
-  <input type="file" id="pdf" accept="application/pdf" class="full" style="margin-top:10px">
+  return `<h1>Ajustes</h1>`+`<div class="card"><h2>👤 Mi perfil</h2><div class="row"><span style="flex:1">Nombre</span><input type="text" value="${esc(PF().name||'')}" data-pf="name" style="width:160px;font-size:18px"></div><div class="row"><span style="flex:1">Altura (cm)</span><input type="number" inputmode="numeric" value="${PF().h||''}" data-pf="h"></div><div class="row"><span style="flex:1">Fecha de nacimiento</span><input type="date" value="${esc(PF().birth||'')}" data-pf="birth" style="width:165px;font-size:16px"></div>${ageNote()}<div class="row"><span style="flex:1">Peso objetivo (kg)</span><input type="number" inputmode="decimal" value="${PF().goalKg||''}" data-pf="goalKg"></div><div class="row"><span style="flex:1">Mi objetivo</span><select data-pf="goal" style="width:160px">${[['bajar','Bajar de peso'],['mantener','Mantener'],['subir','Subir de peso']].map(([v,t])=>`<option value="${v}" ${PF().goal===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="mu" style="margin-top:10px">Mis frases motivadoras (una por línea, opcional)</div><textarea data-pf="customTxt" style="min-height:90px;font-size:16px;margin-top:6px">${esc(PF().customTxt||'')}</textarea>${PF().h&&S.bw?`<div class="mu" style="margin-top:8px">IMC: ${(S.bw/Math.pow(PF().h/100,2)).toFixed(1)}</div>`:''}</div><div class="card"><h2>📍 Mi ciudad (clima)</h2><div class="mu">${PF().city?'Actual: '+esc(PF().city):'Elegí tu ciudad para que las frases tengan en cuenta el clima.'}</div><div class="row"><input type="text" id="cty" placeholder="Ej: Pilar" style="width:auto;flex:1;font-size:18px"><button class="sec" id="ctyb">Buscar</button></div><div id="ctyr"></div></div><div class="card"><h2>⚙️ Preferencias</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="row"><span style="flex:1">🔆 Mantener la pantalla encendida mientras entrenás</span><input type="checkbox" data-opt="wake" ${OPT().wake?'checked':''}></div><div class="row"><span style="flex:1">🔔 Sonido al terminar el descanso</span><input type="checkbox" data-opt="sound" ${OPT().sound?'checked':''}></div><div class="row"><span style="flex:1">📳 Vibración al terminar el descanso</span><input type="checkbox" data-opt="vib" ${OPT().vib?'checked':''}></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div>${uiCard()}<h2 id="plansec" style="margin:22px 0 10px;font-size:20px">📄 Mi plan de entrenamiento</h2><div class="card"><div class="mu">Subí el PDF del plan, un archivo TXT o Markdown, o pegá el texto. Después revisá cuántas sesiones y ejercicios se cargaron.</div>
+  <input type="file" id="pdf" accept="application/pdf,.pdf,.txt,.md,text/plain,text/markdown" class="full" style="margin-top:10px">
   <textarea id="txt" placeholder="A | Fuerza general&#10;Press de pecho 3 x 10-12&#10;Dead Bug 3 x 10 por lado&#10;Plancha 3 x 30 segundos&#10;Cardio: 10 min de bicicleta" style="margin-top:8px">${esc(S.plan?S.plan.raw:'')}</textarea>
   <button class="full" id="go">Interpretar plan</button><div id="msg" class="mu" style="margin-top:8px"></div></div>`+
   (S.plan?S.plan.sessions.map((s,si)=>`<div class="card"><h2>${esc(s.name)}</h2>`+s.ex.map((e,j)=>e.sets?`<div class="row" style="margin-top:8px">${demoId(e.name)?`<img class="th" loading="lazy" alt="" src="${IMG+demoId(e.name)}/0.jpg" onerror="this.remove()">`:''}<div class="mu" style="flex:1">${esc(e.name)} · ${e.sets} x ${esc(targetText(e.reps,e.unit))}${e.side?' por lado':''}</div><button class="sec" style="padding:6px 10px" data-demo="p${si}-${j}">Ver</button></div><div id="dm-p${si}-${j}" class="demo" hidden>${demoHtml(e.name)}</div>`:`<div class="mu" style="margin-top:8px">${esc(e.name)}</div>`).join('')+`</div>`).join(''):'')+`<div class="card"><h2>Respaldo</h2><div class="mu">Guardá tu historial en un archivo y recuperalo si cambiás de celular o borrás los datos.</div><button class="full" id="exp">Exportar respaldo</button><button class="full sec" id="imp">Importar respaldo</button><button class="full sec" id="csv1">📊 Exportar entrenamientos (planilla CSV)</button><button class="full sec" id="csv2">📊 Exportar pesos y seguimiento (planilla CSV)</button><div class="mu" style="margin-top:8px">El respaldo no incluye las fotos: quedan en este celular.</div><input type="file" id="impf" accept=".json,application/json" style="display:none"><div id="bmsg" class="mu" style="margin-top:8px"></div></div><div class="card"><h2>📲 Instalar en otro celular</h2><div class="mu">Compartí la app con tu familia o amigos: cada uno tiene sus propios datos, su plan y su perfil.</div><button class="full" id="shr">📲 Mostrar código QR y enlace</button><button class="full sec" id="shrplan">📤 Enviar mi plan (texto) a otra persona</button></div>`;
@@ -1267,8 +1278,10 @@ function plan(){
 function setPlan(t){
   const ss=parse(t),m=$('msg');
   if(!ss.length){m.textContent='No encontré ejercicios. Probá «Ejercicio 3 x 10», «Plancha 3 x 30 segundos» o una tabla Ejercicio | Series | Repeticiones. Usá un bloque por sesión.';return}
+  if(S.cur&&!confirm('Hay un entrenamiento en curso. Cargar este plan lo cerrará. ¿Querés continuar?')){m.textContent='No se cambió el plan.';return}
   S.plan={raw:t,sessions:ss};S.cur=null;save();render();
-  $('msg').textContent='Listo: '+ss.length+' sesiones cargadas.';
+  const count=ss.reduce((n,s)=>n+s.ex.filter(e=>e.sets).length,0);
+  $('msg').textContent='Listo: '+ss.length+' sesiones y '+count+' ejercicios cargados. Revisá la lista completa antes de empezar.';
 }
 
 async function doExport(){
@@ -1399,9 +1412,12 @@ document.addEventListener('change',async e=>{
     catch(err){$('bmsg').textContent='El archivo no parece un respaldo válido.'}
     return}
   if(e.target.id!=='pdf'||!e.target.files[0])return;
-  $('msg').textContent='Leyendo PDF…';
-  try{const t=await pdfText(e.target.files[0]);$('txt').value=t;setPlan(t)}
-  catch(err){$('msg').textContent='No pude leer el PDF. Pegá el texto a mano.'}
+  const f=e.target.files[0],isPdf=f.type==='application/pdf'||/\.pdf$/i.test(f.name),isText=/\.(?:txt|md)$/i.test(f.name)||f.type==='text/plain'||f.type==='text/markdown';
+  e.target.value='';
+  if(!isPdf&&!isText){$('msg').textContent='Elegí un archivo PDF, TXT o Markdown.';return}
+  $('msg').textContent=isPdf?'Leyendo PDF…':'Leyendo plan…';
+  try{const t=isPdf?await pdfText(f):await f.text();$('txt').value=t;setPlan(t)}
+  catch(err){$('msg').textContent='No pude leer el archivo. Usá un PDF con texto seleccionable, TXT o Markdown, o pegá el texto.'}
 });
 history.replaceState({v:'home'},'');addEventListener('popstate',e=>{closeAll();navBack=true;view=(e.state&&e.state.v)||'home';render();scrollTo(0,0)});
 applyUi();try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(UI().theme==='auto')applyUi()})}catch(e){}
