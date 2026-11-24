@@ -127,6 +127,7 @@ button:active{transform:scale(.97);transition:transform .08s}.tile4:active{trans
 .cal .cd.on{background:var(--ac2);border-color:var(--ac)}.cal .cd.hoy{outline:2px solid var(--ac)}
 #app,.modal>*,.pop .pc{zoom:var(--z,1)}
 #cd-cv{max-height:58vh;width:auto;max-width:100%;display:block;margin:10px auto 0;border-radius:14px}
+#social-cv{max-height:52vh;width:100%;object-fit:contain;display:block;margin:10px auto 0;border-radius:14px}
 </style></head><body><main id="app"></main>
 <div id="rest" class="rest"></div>
 <div id="tmr" class="rest tm"></div>
@@ -139,9 +140,10 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 <script>
 const K='mi-entreno-v1';
 let S={plan:null,plans:[],activePlanId:null,cur:null,hist:[],week:1,bw:122,rest:90,wts:[],pf:{name:'',h:0,age:0,goalKg:0,goal:'bajar'},opt:{wake:true,sound:true,vib:true}},view='home';
+let driveAccessToken=null,driveTokenExpiresAt=0,driveGISPromise=null,driveSyncTimer=null,driveSyncing=false,driveNotice='',drivePending=null,driveIntent='connect';
 const FOCO=['Retomar movimientos: priorizá la técnica y un esfuerzo cómodo. Registrá las cargas.','Consolidar técnica: mantené las cargas y terminá con 3-4 repeticiones de reserva.','Progresar gradualmente: subí un poco la carga solo si la técnica fue buena.','Evaluar y recuperar: revisá cargas y sensaciones. No fuerces aumentos.'];
 try{const r=localStorage.getItem(K);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
-const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}};
+const save=()=>{S.updatedAt=Date.now();try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}scheduleDriveSync()};
 function clampWeek(w){return Math.min(4,Math.max(1,+w||1))}
 function weekNumber(start,week){return Math.max(1,+start||1)+clampWeek(week)-1}
 function ensurePlanLibrary(){
@@ -240,23 +242,39 @@ function targetText(reps,unit){return String(reps)+(unit==='s'?' s':unit==='min'
 function doseText(reps,unit){return String(reps||'')+(unit==='s'?' s':unit==='min'?' min':' reps')}
 function setText(x,unit){const q=doseText(x.reps,unit);return(+x.kg>0?String(x.kg).replace('.',',')+' kg × ':'')+q}
 
+let ocrScriptPromise=null;
+function loadTesseract(){
+  if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  if(!ocrScriptPromise)ocrScriptPromise=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=()=>resolve(window.Tesseract);s.onerror=()=>{ocrScriptPromise=null;reject(new Error('No pude cargar el lector OCR'))};document.head.appendChild(s)});
+  return ocrScriptPromise;
+}
 async function pdfText(file){
   pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,out=[];
-  for(let p=1;p<=pdf.numPages;p++){
-    const page=await pdf.getPage(p),c=await page.getTextContent(),rows={};
-    const pageText=c.items.map(i=>i.str).join(' '),splitSessions=/\bA\s*\|/i.test(pageText)&&/\bB\s*\|/i.test(pageText),mid=page.getViewport({scale:1}).width/2;
-    c.items.forEach(i=>{const y=Math.round(i.transform[5]/4);(rows[y]=rows[y]||[]).push(i)});
-    const rowText=items=>items.sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim();
-    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{
-      const items=rows[y].sort((a,b)=>a.transform[4]-b.transform[4]);
-      if(splitSessions){
-        const left=items.filter(i=>i.transform[4]<mid),right=items.filter(i=>i.transform[4]>=mid);
-        if(left.length&&right.length){out.push(rowText(left),rowText(right));return}
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise,out=[];let worker=null,currentPage=0;
+  const msg=$('msg');
+  try{
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p),c=await page.getTextContent(),rows={};
+      const pageText=c.items.map(i=>i.str).join(' '),splitSessions=/\bA\s*\|/i.test(pageText)&&/\bB\s*\|/i.test(pageText),mid=page.getViewport({scale:1}).width/2;
+      c.items.forEach(i=>{const y=Math.round(i.transform[5]/4);(rows[y]=rows[y]||[]).push(i)});
+      const rowText=items=>items.sort((a,b)=>a.transform[4]-b.transform[4]).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim(),pageLines=[];
+      Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{
+        const items=rows[y].sort((a,b)=>a.transform[4]-b.transform[4]);
+        if(splitSessions){const left=items.filter(i=>i.transform[4]<mid),right=items.filter(i=>i.transform[4]>=mid);if(left.length&&right.length){pageLines.push(rowText(left),rowText(right));return}}
+        pageLines.push(rowText(items));
+      });
+      let text=pageLines.filter(Boolean).join('\n');
+      if(text.replace(/\s/g,'').length<80){
+        if(msg)msg.textContent='Parece un PDF escaneado. Preparando reconocimiento de texto en español…';
+        const T=await loadTesseract();currentPage=p;
+        if(!worker)worker=await T.createWorker('spa',1,{workerPath:'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',langPath:'https://tessdata.projectnaptha.com/4.0.0',corePath:'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.0.0',logger:m=>{if(msg&&m.status==='recognizing text')msg.textContent='Leyendo página '+currentPage+' de '+pdf.numPages+' · '+Math.round((m.progress||0)*100)+'%'}});
+        const viewport=page.getViewport({scale:1.8}),canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);
+        await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;
+        const result=await worker.recognize(canvas);text=(result.data.text||'').trim();canvas.width=canvas.height=0;
       }
-      out.push(rowText(items));
-    });
-  }
+      if(text)out.push(text);
+    }
+  }finally{if(worker)await worker.terminate()}
   return out.join('\n');
 }
 
@@ -282,10 +300,17 @@ const DEMO=[
 [/hiperextension|lumbar/,'Hyperextensions_Back_Extensions']];
 const nz=t=>t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 function demoId(name){const n=nz(name),m=DEMO.find(x=>x[0].test(n));return m?m[1]:null}
+const CURATED_MEDIA=[
+  [/prensa|leg press/i,{title:'Guía ACE · prensa de piernas',url:'https://www.acefitness.org/resources/everyone/exercise-library/154/seated-leg-press/'}],
+  [/bird[\s-]*dog/i,{title:'Guía ACE · Bird-dog',url:'https://www.acefitness.org/resources/everyone/exercise-library/14/bird-dog/'}],
+  [/reverse crunch|crunch inverso/i,{title:'Guía ACE · crunch inverso',url:'https://www.acefitness.org/resources/everyone/exercise-library/76/reverse-crunch/'}],
+  [/plancha|\bplank\b/i,{title:'Video ACE · Plank School',url:'https://www.youtube.com/watch?v=Vdcy7VrRluA'}]
+];
 function demoHtml(name){
   const id=demoId(name),yt='https://www.youtube.com/results?search_query='+encodeURIComponent(name+' ejercicio técnica correcta'),imgSearch='https://www.google.com/search?tbm=isch&q='+encodeURIComponent(name+' ejercicio');
+  const curated=CURATED_MEDIA.find(([re])=>re.test(name));
   const images=id?`<div class="imgs">${[0,1].map(k=>`<img loading="lazy" alt="${esc(name)} posición ${k+1}" src="${IMG+id}/${k}.jpg" onerror="this.style.display='none'">`).join('')}</div>`:`<div class="mu">No encontré imágenes integradas para este ejercicio.</div>`;
-  return images+`<a href="${imgSearch}" target="_blank" rel="noopener">🔎 Buscar ${id?'más ':''}imágenes</a><a href="${yt}" target="_blank" rel="noopener">▶ Buscar video en YouTube</a>`+(id?`<div class="mu" style="font-size:11px">Imágenes: free-exercise-db (dominio público)</div>`:'');
+  return images+`<a href="${imgSearch}" target="_blank" rel="noopener">🔎 Buscar ${id?'más ':''}imágenes</a>`+(curated?`<a href="${curated[1].url}" target="_blank" rel="noopener">▶ ${curated[1].title}</a>`:`<a href="${yt}" target="_blank" rel="noopener">▶ Buscar video en YouTube</a>`)+(id?`<div class="mu" style="font-size:11px">Imágenes: free-exercise-db (dominio público)</div>`:'');
 }
 const MET={Caminata:3.5,Cinta:4,Bici:5.5,Escalera:7,Movilidad:2.5};
 function kcalCur(){
@@ -637,7 +662,7 @@ async function delFoto(){
   try{await fdel(id)}catch(e){}
   S.fotos=(S.fotos||[]).filter(f=>f.id!==id);save();closeFotos();render();
 }
-function closeAll(){closeCard();closeW();closeSeg();closeFotos();closeGW();closeEx();closeX();closeRec();closeRn();closeShare();closeOb()}
+function closeAll(){closeCard();closeSocialDesign();closeW();closeSeg();closeFotos();closeGW();closeEx();closeX();closeRec();closeRn();closeShare();closeOb()}
 function csvText(rows){const q=v=>{v=String(v==null?'':v);return /[;"\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};return '\ufeff'+rows.map(r=>r.map(q).join(';')).join('\r\n')}
 function csvDl(name,rows){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csvText(rows)],{type:'text/csv;charset=utf-8'}));a.download=name;document.body.appendChild(a);a.click();a.remove();toast('📊 Archivo generado: '+name)}
 const dec=v=>String(v==null?'':v).replace('.',',');
@@ -824,6 +849,81 @@ function uiCard(){
   const u=UI();
   return `<div class="card"><h2>🎨 Apariencia</h2><div class="mu">Modo</div><div class="chips">${[['auto','🌗 Automático'],['light','☀️ Claro'],['dark','🌙 Oscuro']].map(([v,l])=>`<button class="chip ${u.theme===v?'on':''}" data-ui="theme:${v}">${l}</button>`).join('')}</div><div class="mu" style="margin-top:14px">Color de la app</div><div class="chips">${Object.entries(PAL).map(([k,p])=>`<button class="chip" data-ui="color:${k}" aria-label="${p[0]}" style="width:48px;height:48px;padding:0;border-radius:50%;background:${p[1][0]};border:4px solid ${u.color===k?'var(--tx)':'transparent'}"></button>`).join('')}</div><div class="mu" style="margin-top:14px">Tamaño de letra</div><div class="chips">${[[90,'A−'],[100,'A'],[115,'A+'],[130,'A++']].map(([v,l])=>`<button class="chip ${(u.size||100)===v?'on':''}" data-ui="size:${v}">${l}</button>`).join('')}</div><div class="mu" style="margin-top:12px">Así se ve el texto: ¡Vamos con todo, ${esc(nm()||'campeón')}!</div></div>`;
 }
+function driveCard(){
+  const active=driveTokenValid(),msg=driveNotice||(active?'Google Drive conectado en esta sesión.':S.driveAuto?'Conectá Drive para esta sesión y continuar la sincronización.':'Los datos permanecen en este celular hasta que conectes Drive.');
+  return `<div class="card"><h2>☁️ Respaldo en Google Drive</h2><div class="mu">Guarda el plan, perfil, pesos y entrenamientos. Las fotos no se incluyen. El respaldo será un archivo visible en tu Drive.</div><input id="drive-client-id" type="text" value="${esc(S.driveClientId||'')}" placeholder="Client ID público de Google" style="margin-top:10px;font-size:15px"><div class="mu" style="margin-top:8px">En Google Cloud habilitá Google Drive API, creá una credencial web y autorizá el origen <b>${esc(location.origin)}</b>. No pegues una contraseña ni Client Secret.</div><a href="https://developers.google.com/identity/oauth2/web/guides/get-google-api-clientid" target="_blank" rel="noopener">Guía oficial para crear el Client ID</a><div id="drive-status" class="mu" style="margin-top:10px">${esc(msg)}</div><button class="full" id="drive-connect">${active?'Revisar y sincronizar':'Conectar y activar sincronización'}</button><div class="row"><button class="sec" id="drive-save" style="flex:1">Guardar ahora</button><button class="sec" id="drive-restore" style="flex:1">Restaurar copia</button></div><div class="mu" style="margin-top:8px">Al conectar, se solicita acceso solo a los archivos creados por Mi Entreno. El Client ID es público y se guarda en este teléfono.</div></div>`;
+}
+function driveStatus(t){driveNotice=t;const e=$('drive-status');if(e)e.textContent=t}
+function driveTokenValid(){return !!driveAccessToken&&Date.now()+30000<driveTokenExpiresAt}
+function scheduleDriveSync(){clearTimeout(driveSyncTimer);driveSyncTimer=null;if(S.driveAuto&&driveTokenValid())driveSyncTimer=setTimeout(()=>{if(driveSyncing){scheduleDriveSync();return}driveWriteFile(true)},8000)}
+function loadGoogleGIS(){
+  if(window.google?.accounts?.oauth2)return Promise.resolve(window.google);
+  if(!driveGISPromise)driveGISPromise=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=()=>resolve(window.google);s.onerror=()=>{driveGISPromise=null;reject(new Error('No pude cargar el acceso de Google'))};document.head.appendChild(s)});
+  return driveGISPromise;
+}
+async function driveRequest(url,options={}){
+  if(!driveTokenValid())throw new Error('La sesión de Drive venció. Volvé a conectarla.');
+  const r=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:'Bearer '+driveAccessToken}});
+  if(!r.ok){let msg='Google Drive respondió con error '+r.status;try{msg=(await r.json()).error?.message||msg}catch(e){}if(r.status===401){driveAccessToken=null;driveStatus('La sesión de Drive venció. Tocá Conectar para continuar.')}throw new Error(msg)}return r;
+}
+async function driveFindFile(){
+  const q="name = 'Mi Entreno - respaldo automático.json' and trashed = false",url='https://www.googleapis.com/drive/v3/files?spaces=drive&pageSize=20&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime)&q='+encodeURIComponent(q);
+  return((await(await driveRequest(url)).json()).files||[])[0]||null;
+}
+async function driveReadFile(id){const d=await(await driveRequest('https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(id)+'?alt=media')).json();if(!d||!Array.isArray(d.hist))throw new Error('El archivo de Drive no parece un respaldo válido.');return d}
+async function driveUpload(data,id){
+  if(id)return driveRequest('https://www.googleapis.com/upload/drive/v3/files/'+encodeURIComponent(id)+'?uploadType=media&fields=id,name,modifiedTime',{method:'PATCH',headers:{'Content-Type':'application/json'},body:data});
+  const boundary='mientreno_'+Math.random().toString(36).slice(2),meta=JSON.stringify({name:'Mi Entreno - respaldo automático.json',mimeType:'application/json',description:'Respaldo de la app Mi Entreno'}),body='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+meta+'\r\n--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+data+'\r\n--'+boundary+'--';
+  return driveRequest('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body});
+}
+async function driveWriteFile(silent=false){
+  if(!driveTokenValid()){driveStatus('Conectá Google Drive para guardar una copia.');if(!silent)toast('Volvé a conectar Google Drive.');return false}
+  if(driveSyncing){scheduleDriveSync();return false}
+  clearTimeout(driveSyncTimer);driveSyncTimer=null;driveSyncing=true;
+  try{
+    let id=S.driveFileId||null;if(!id){const f=await driveFindFile();if(f)id=f.id}
+    S.driveAuto=true;S.updatedAt=Math.max(+S.updatedAt||0,Date.now());S.driveLastSynced=S.updatedAt;if(id)S.driveFileId=id;const snapshotAt=S.updatedAt,payload=JSON.stringify(S);
+    let r;try{r=await driveUpload(payload,id)}catch(e){if(id&&/404|not found/i.test(e.message)){id=null;delete S.driveFileId;const retry=JSON.stringify(S);r=await driveUpload(retry,null)}else throw e}
+    const f=await r.json();S.driveFileId=f.id;S.driveLastSynced=snapshotAt;localStorage.setItem(K,JSON.stringify(S));
+    driveStatus('Copia guardada en Drive · '+new Date(S.driveLastSynced).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}));if(!silent)toast('☁️ Respaldo actualizado en Drive');return true;
+  }catch(e){driveStatus('No pude sincronizar: '+e.message);if(!silent)toast('No pude guardar el respaldo en Drive.');return false}finally{driveSyncing=false;if(S.driveAuto&&driveTokenValid()&&(+S.updatedAt||0)>(+S.driveLastSynced||0))scheduleDriveSync()}
+}
+function closeDriveConflict(){const m=$('drive-conflict');if(m)m.remove();drivePending=null}
+function showDriveConflict(data,file){
+  closeDriveConflict();drivePending={data,file};const m=document.createElement('div');m.className='modal';m.id='drive-conflict';const date=file.modifiedTime?new Date(file.modifiedTime).toLocaleString('es-AR'):'fecha no disponible';
+  m.innerHTML=`<h1>☁️ Encontré una copia en Drive</h1><div class="mu">Última modificación: ${esc(date)}. Restaurar reemplaza los datos de este celular; guardar este celular reemplaza la copia de Drive.${S.cur?' También se cerrará el entrenamiento en curso.':''}</div><button class="full" id="drive-restore-choice">Restaurar desde Drive</button><button class="full sec" id="drive-keep-choice">Guardar este celular</button><button class="full sec" id="drive-cancel-choice">Decidir después</button>`;document.body.appendChild(m);
+}
+function applyDriveRestore(data,file){
+  const client=S.driveClientId||$('drive-client-id')?.value.trim()||'';stopCardioTimer(false,false);
+  S=Object.assign({plan:null,plans:[],activePlanId:null,cur:null,hist:[],week:1,bw:122,rest:90,wts:[],pf:{name:'',h:0,age:0,goalKg:0,goal:'bajar'},opt:{wake:true,sound:true,vib:true}},data);S.cur=null;S.driveClientId=client;S.driveAuto=true;S.driveFileId=file.id;S.driveLastSynced=Date.parse(file.modifiedTime)||+data.driveLastSynced||Date.now();ensurePlanLibrary();closeDriveConflict();save();render();driveStatus('Copia restaurada desde Google Drive.');toast('Respaldo de Drive restaurado');
+}
+async function driveRestoreFile(){
+  try{const f=await driveFindFile();if(!f){driveStatus('Todavía no hay una copia de Mi Entreno en Drive.');toast('No encontré una copia en Drive.');return}const data=await driveReadFile(f.id);if(!confirm('Restaurar reemplaza el plan y el historial de este celular.'+(S.cur?' También se cerrará el entrenamiento en curso.':'')+' ¿Querés continuar?'))return;applyDriveRestore(data,f)}catch(e){driveStatus('No pude leer Drive: '+e.message);toast('No pude abrir el respaldo de Drive.')}
+}
+async function driveAfterConnect(intent,localUpdated){
+  if(intent==='save'){await driveWriteFile();return}if(intent==='restore'){await driveRestoreFile();return}
+  try{
+    const f=await driveFindFile();if(!f){await driveWriteFile(true);return}const data=await driveReadFile(f.id),last=+S.driveLastSynced||0,remote=+data.updatedAt||Date.parse(f.modifiedTime)||0,local=+localUpdated||0;
+    if(!last){showDriveConflict(data,f);driveStatus('Elegí si restaurás la copia existente o guardás los datos de este celular.');return}
+    if(remote>last&&local>last){showDriveConflict(data,f);driveStatus('Hay cambios en el celular y en Drive. Elegí cuál conservar.');return}
+    if(remote>last){applyDriveRestore(data,f);return}if(local>last){await driveWriteFile(true);return}
+    S.driveFileId=f.id;localStorage.setItem(K,JSON.stringify(S));driveStatus('Drive y este celular ya están sincronizados.');
+  }catch(e){driveStatus('No pude revisar Drive: '+e.message)}
+}
+async function driveConnect(intent='connect'){
+  const client=($('drive-client-id')?.value||S.driveClientId||'').trim();if(!client){driveStatus('Pegá primero el Client ID de Google Cloud.');toast('Falta el Client ID público de Google.');return}
+  if(!/\.apps\.googleusercontent\.com$/i.test(client)){driveStatus('Ese valor no parece un Client ID web de Google.');toast('Revisá el Client ID.');return}
+  if(driveTokenValid()){await driveAfterConnect(intent,+S.updatedAt||0);return}
+  const localUpdated=+S.updatedAt||0;if(S.driveClientId!==client)driveAccessToken=null;S.driveClientId=client;S.driveAuto=true;localStorage.setItem(K,JSON.stringify(S));
+  try{const g=await loadGoogleGIS(),tc=g.accounts.oauth2.initTokenClient({client_id:client,scope:'https://www.googleapis.com/auth/drive.file',callback:async r=>{
+      if(r.error||!r.access_token){driveAccessToken=null;driveStatus('Google no autorizó la conexión. Revisá la cuenta y los usuarios de prueba.');return}
+      driveAccessToken=r.access_token;driveTokenExpiresAt=Date.now()+(+r.expires_in||3600)*1000;await driveAfterConnect(intent,localUpdated);
+    },error_callback:()=>driveStatus('No pude abrir la ventana de Google. Permití ventanas emergentes e intentá otra vez.')});tc.requestAccessToken({prompt:''});driveStatus('Conectando con Google Drive…')}
+  catch(e){driveStatus('No pude iniciar sesión con Google: '+e.message)}
+}
+async function resolveDriveConflict(action){
+  const p=drivePending;if(!p)return;closeDriveConflict();if(action==='restore'){applyDriveRestore(p.data,p.file);return}if(action==='keep'){await driveWriteFile();return}S.driveAuto=false;save();driveStatus('No se hicieron cambios. Podés volver a conectar cuando quieras.');
+}
 const TIPS=['Antes de subir peso, probá sumar 1 o 2 repeticiones por serie.','Revisá la técnica y respetá el descanso de 90 a 120 segundos.','Probá una variante del ejercicio durante unas semanas.','Dormir bien y comer suficiente también cuentan: a veces es cansancio.','Sin buscar el fallo: la calidad de cada repetición vale más que el peso.'];
 function plateau(name){
   const ss=[];
@@ -890,10 +990,37 @@ function cardData(kind,id){
   const M=[['💪',String(r.kg>0?r.kg:r.reps).replace('.',','),r.kg>0?'kg':r.unit==='s'?'s':r.unit==='min'?'min':'reps','Marca']];if(r.kg>0)M.push(['🔁',String(r.reps),'','Repeticiones']);if(est)M.push(['📈',String(est),'kg','1RM estimado']);
   return{title:'¡Nuevo récord!',sub:fmtD(r.d),dl:longD(r.d),lines:[['🏆',r.name],['💪',setText(r,r.unit)]].concat(est?[['📈','1RM ≈ '+est+' kg']]:[]),metrics:M,name:n,extra:r.name};
 }
-function drawMin(c,W,H,d,img,dark,ac){
+const BG_PRESETS=[
+  {id:'app',name:'Turquesa',colors:['#0f766e','#0b1f2a'],kind:'wave'},
+  {id:'abstract',name:'Abstracto',colors:['#6d28d9','#111827'],kind:'rings'},
+  {id:'motion',name:'Movimiento',colors:['#1d4ed8','#071634'],kind:'lines'},
+  {id:'strength',name:'Fuerza',colors:['#c2410c','#171923'],kind:'weight'},
+  {id:'cardio',name:'Cardio',colors:['#be185d','#250822'],kind:'pulse'},
+  {id:'fresh',name:'Energía',colors:['#15803d','#061c25'],kind:'dots'}
+];
+function drawBackdrop(c,W,H,id,ac){
+  const p=BG_PRESETS.find(x=>x.id===id)||BG_PRESETS[0],a=id==='app'?ac:p.colors[0],b=p.colors[1],g=c.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,a);g.addColorStop(1,b);c.fillStyle=g;c.fillRect(0,0,W,H);
+  const unit=Math.min(W,H);c.save();c.strokeStyle='rgba(255,255,255,.13)';c.fillStyle='rgba(255,255,255,.09)';c.lineWidth=Math.max(5,unit*.008);
+  if(p.kind==='rings'||p.kind==='pulse'){
+    const x=W*.82,y=H*.2;for(let i=0;i<5;i++){c.beginPath();c.arc(x,y,unit*(.12+i*.075),Math.PI*.15,Math.PI*1.68);c.stroke()}
+    if(p.kind==='pulse'){c.beginPath();c.moveTo(0,H*.72);c.lineTo(W*.28,H*.72);c.lineTo(W*.36,H*.62);c.lineTo(W*.43,H*.83);c.lineTo(W*.52,H*.66);c.lineTo(W*.62,H*.72);c.lineTo(W,H*.72);c.stroke()}
+  }else if(p.kind==='lines'){
+    for(let i=-H;i<W;i+=unit*.13){c.beginPath();c.moveTo(i,0);c.lineTo(i+H,H);c.stroke()}
+  }else if(p.kind==='weight'){
+    const x=W*.72,y=H*.2,r=unit*.045,bar=unit*.28;c.lineWidth=unit*.022;c.beginPath();c.moveTo(x-bar/2,y);c.lineTo(x+bar/2,y);c.stroke();
+    [-1,1].forEach(side=>{c.beginPath();c.arc(x+side*bar/2,y,r,0,Math.PI*2);c.fill();c.beginPath();c.arc(x+side*(bar/2+r*1.5),y,r*1.6,0,Math.PI*2);c.fill()});
+  }else if(p.kind==='dots'){
+    const r=unit*.009;for(let y=unit*.1;y<H;y+=unit*.085)for(let x=unit*.08;x<W;x+=unit*.085){c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()}
+  }else{
+    for(let i=0;i<4;i++){c.beginPath();c.ellipse(W*.77,H*(.18+i*.09),unit*(.28+i*.06),unit*(.12+i*.04),-.35,0,Math.PI*2);c.stroke()}
+  }
+  c.restore();
+}
+function drawMin(c,W,H,d,img,dark,ac,bg){
   const F='system-ui,"Segoe UI Emoji","Noto Color Emoji",sans-serif';
   if(img){const r=Math.max(W/img.width,H/img.height),w=img.width*r,h=img.height*r;c.drawImage(img,(W-w)/2,(H-h)/2,w,h)}
-  else{const g=c.createLinearGradient(0,0,W,H);g.addColorStop(0,ac);g.addColorStop(1,'#0b1f2a');c.fillStyle=g;c.fillRect(0,0,W,H)}
+  else drawBackdrop(c,W,H,bg,ac);
   const a=[0.5,0.68,0.85][dark],g2=c.createLinearGradient(0,H*0.5,0,H);g2.addColorStop(0,'rgba(0,0,0,0)');g2.addColorStop(0.45,'rgba(0,0,0,'+(a*0.6)+')');g2.addColorStop(1,'rgba(0,0,0,'+a+')');c.fillStyle=g2;c.fillRect(0,H*0.5,W,H*0.5);
   const g3=c.createLinearGradient(0,0,0,H*0.18);g3.addColorStop(0,'rgba(0,0,0,0.35)');g3.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=g3;c.fillRect(0,0,W,H*0.18);
   c.fillStyle='#fff';c.textBaseline='top';c.shadowColor='rgba(0,0,0,.4)';c.shadowBlur=10;
@@ -911,13 +1038,13 @@ function drawMin(c,W,H,d,img,dark,ac){
   });
 }
 function wrapT(c,t,max){const w=String(t).split(' '),out=[];let cur='';w.forEach(x=>{const q=cur?cur+' '+x:x;if(c.measureText(q).width>max&&cur){out.push(cur);cur=x}else cur=q});if(cur)out.push(cur);return out}
-function drawCard(cv,d,img,dark,fmt,style){
+function drawCard(cv,d,img,dark,fmt,style,bg){
   const W=1080,H=fmt==='story'?1920:fmt==='sq'?1080:1350;cv.width=W;cv.height=H;const c=cv.getContext('2d');
   const ac=(getComputedStyle(document.documentElement).getPropertyValue('--ac')||'').trim()||'#0f766e';
-  if(style==='min'){drawMin(c,W,H,d,img,dark,ac);return}
+  if(style==='min'){drawMin(c,W,H,d,img,dark,ac,bg);return}
   if(img){const r=Math.max(W/img.width,H/img.height),w=img.width*r,h=img.height*r;c.drawImage(img,(W-w)/2,(H-h)/2,w,h);
     const a=[0.3,0.5,0.72][dark],g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(0,0,0,'+(a*0.7)+')');g.addColorStop(1,'rgba(0,0,0,'+a+')');c.fillStyle=g;c.fillRect(0,0,W,H)}
-  else{const g=c.createLinearGradient(0,0,W,H);g.addColorStop(0,ac);g.addColorStop(1,'#0b1f2a');c.fillStyle=g;c.fillRect(0,0,W,H)}
+  else drawBackdrop(c,W,H,bg,ac);
   const F='system-ui,"Segoe UI Emoji","Noto Color Emoji",sans-serif',P=84,mx=fmt==='sq'?4:fmt==='vert'?6:7;
   c.fillStyle='#fff';c.textBaseline='top';c.shadowColor='rgba(0,0,0,.45)';c.shadowBlur=14;
   c.font='700 46px '+F;c.fillText('🏋️ Mi Entreno',P,P);
@@ -928,29 +1055,31 @@ function drawCard(cv,d,img,dark,fmt,style){
   d.lines.slice(0,mx).forEach(([e,t])=>{const ls=wrapT(c,t,W-2*P-90).slice(0,2);c.fillText(e,P,y);ls.forEach((l,i)=>c.fillText(l,P+90,y+i*58));y+=(fmt==='sq'?84:100)+(ls.length>1?58:0)});
   c.font='700 52px '+F;if(d.name)c.fillText(d.name,P,H-P-52);
 }
-const cardRedraw=()=>{if(cardSt&&cardSt.d&&$('cd-cv'))drawCard($('cd-cv'),cardSt.d,cardSt.img,cardSt.dark,cardSt.fmt,cardSt.style)};
+const cardRedraw=()=>{if(cardSt&&cardSt.d&&$('cd-cv'))drawCard($('cd-cv'),cardSt.d,cardSt.img,cardSt.dark,cardSt.fmt,cardSt.style,cardSt.bg)};
 function dataToImg(u){return new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=u})}
 function cardChips(){
   const m=$('cdm');if(!m||!cardSt)return;
-  m.querySelectorAll('[data-dk]').forEach(b=>b.classList.toggle('on',+b.dataset.dk===cardSt.dark));
+  m.querySelectorAll('[data-dk]').forEach(b=>{b.disabled=!cardSt.img;b.classList.toggle('on',+b.dataset.dk===cardSt.dark)});
   m.querySelectorAll('[data-cs]').forEach(b=>b.classList.toggle('on',b.dataset.cs===cardSt.style));
   m.querySelectorAll('[data-fm]').forEach(b=>b.classList.toggle('on',b.dataset.fm===cardSt.fmt));
+  m.querySelectorAll('[data-bg]').forEach(b=>b.classList.toggle('on',b.dataset.bg===cardSt.bg));
+  const dl=$('cd-dark-label');if(dl)dl.textContent=cardSt.img?'Oscurecer la foto':'Oscurecer fondo (solo para fotos)';
   const nb=$('cd-nobg');if(nb)nb.style.display=cardSt.img?'block':'none';
 }
 function openCard(kind,id){
   const d=cardData(kind,id);if(!d){toast('Todavía no hay datos para la tarjeta');return}
-  closeCard();cardSt={d,img:null,dark:1,fmt:'vert',style:S.cardStyle||'full'};
+  closeCard();cardSt={d,img:null,dark:1,fmt:'vert',style:S.cardStyle||'full',bg:S.cardBg||'app'};
   const m=document.createElement('div');m.className='modal';m.id='cdm';
-  m.innerHTML=`<h1>🖼️ Tarjeta para compartir</h1><div class="mu">Elegí una foto de tu galería como fondo, o dejá el color de la app.</div><canvas id="cd-cv"></canvas><button class="full" id="cd-bg">🖼️ Elegir fondo de la galería</button><button class="full sec" id="cd-nobg" style="display:none">Quitar fondo</button><input type="file" id="cd-f" accept="image/*" style="display:none"><div class="mu" style="margin-top:12px">Estilo</div><div class="chips">${[['full','Completo'],['min','Minimalista']].map(([v,l])=>`<button class="chip" data-cs="${v}">${l}</button>`).join('')}</div><div class="mu" style="margin-top:12px">Oscurecer el fondo (para leer mejor)</div><div class="chips">${['Suave','Medio','Fuerte'].map((l,i)=>`<button class="chip" data-dk="${i}">${l}</button>`).join('')}</div><div class="mu" style="margin-top:12px">Formato</div><div class="chips">${[['sq','Cuadrado'],['vert','Vertical'],['story','Historia']].map(([v,l])=>`<button class="chip" data-fm="${v}">${l}</button>`).join('')}</div><button class="full" id="cd-share">📤 Compartir imagen</button><button class="full sec" id="cd-save">💾 Guardar en el celular</button><button class="full sec" id="cd-close">Cerrar</button>`;
+   m.innerHTML=`<h1>🖼️ Tarjeta para compartir</h1><div class="mu">Elegí un fondo diseñado o una foto de tu galería.</div><canvas id="cd-cv"></canvas><div class="mu" style="margin-top:12px">Fondos</div><div class="chips">${BG_PRESETS.map(p=>`<button class="chip" data-bg="${p.id}">${p.name}</button>`).join('')}</div><button class="full sec" id="cd-bg">🖼️ Elegir foto de la galería</button><button class="full sec" id="cd-nobg" style="display:none">Quitar foto</button><input type="file" id="cd-f" accept="image/*" style="display:none"><div class="mu" style="margin-top:12px">Estilo</div><div class="chips">${[['full','Completo'],['min','Minimalista']].map(([v,l])=>`<button class="chip" data-cs="${v}">${l}</button>`).join('')}</div><div class="mu" id="cd-dark-label" style="margin-top:12px">Oscurecer fondo (solo para fotos)</div><div class="chips">${['Suave','Medio','Fuerte'].map((l,i)=>`<button class="chip" data-dk="${i}">${l}</button>`).join('')}</div><div class="mu" style="margin-top:12px">Formato</div><div class="chips">${[['sq','Cuadrado'],['vert','Vertical'],['story','Historia']].map(([v,l])=>`<button class="chip" data-fm="${v}">${l}</button>`).join('')}</div><button class="full" id="cd-share">📤 Compartir imagen</button><button class="full sec" id="cd-save">💾 Guardar en el celular</button><button class="full sec" id="cd-close">Cerrar</button>`;
   document.body.appendChild(m);cardChips();cardRedraw();
-  fget('cardbg').then(u=>u?dataToImg(u):null).then(i=>{if(i&&cardSt){cardSt.img=i;cardChips();cardRedraw()}}).catch(()=>{});
+  if(cardSt.bg==='photo')fget('cardbg').then(u=>u?dataToImg(u):null).then(i=>{if(i&&cardSt&&cardSt.bg==='photo'){cardSt.img=i;cardChips();cardRedraw()}}).catch(()=>{});
 }
 async function cardPick(file){
   try{
     let bmp;try{bmp=await createImageBitmap(file,{imageOrientation:'from-image'})}catch(e){bmp=await createImageBitmap(file)}
     const sc=Math.min(1,1600/Math.max(bmp.width,bmp.height)),c=document.createElement('canvas');c.width=Math.round(bmp.width*sc);c.height=Math.round(bmp.height*sc);
     c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
-    if(!cardSt)return;cardSt.img=c;cardChips();cardRedraw();
+    if(!cardSt)return;cardSt.img=c;cardSt.bg='photo';S.cardBg='photo';save();cardChips();cardRedraw();
     try{await fput('cardbg',c.toDataURL('image/jpeg',.8))}catch(e){}
   }catch(e){alert('No pude abrir esa imagen. Probá con otra.')}
 }
@@ -964,6 +1093,28 @@ function cardShare(){
     cardSave(b);
   });
 }
+let socialSt=null;
+function socialCard(){return `<div class="card"><h2>🎨 Imágenes para redes</h2><div class="mu">Fondos abstractos y de actividad física, listos para personalizar y compartir.</div><button class="full sec" id="social-open">Crear publicación</button></div>`}
+function closeSocialDesign(){const m=$('social-design');if(m)m.remove();socialSt=null}
+function socialChips(){const m=$('social-design');if(!m||!socialSt)return;m.querySelectorAll('[data-sbg]').forEach(b=>b.classList.toggle('on',b.dataset.sbg===socialSt.bg));m.querySelectorAll('[data-sfm]').forEach(b=>b.classList.toggle('on',b.dataset.sfm===socialSt.fmt))}
+function drawSocialPreview(){
+  const cv=$('social-cv');if(!cv||!socialSt)return;const W=1080,H=socialSt.fmt==='story'?1920:socialSt.fmt==='sq'?1080:1350;cv.width=W;cv.height=H;
+  const c=cv.getContext('2d'),ac=(getComputedStyle(document.documentElement).getPropertyValue('--ac')||'').trim()||'#0f766e';drawBackdrop(c,W,H,socialSt.bg,ac);
+  const g=c.createLinearGradient(0,H*.45,0,H);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.66)');c.fillStyle=g;c.fillRect(0,H*.42,W,H*.58);
+  const title=$('sd-title')?.value.trim()||'',sub=$('sd-sub')?.value.trim()||'',x=W*.09,max=W*.82;let y=H*.69;
+  c.fillStyle='#fff';c.textBaseline='top';c.shadowColor='rgba(0,0,0,.5)';c.shadowBlur=16;
+  if(title){c.font='800 '+Math.round(W*.085)+'px system-ui,sans-serif';const lines=wrapT(c,title,max).slice(0,3);lines.forEach(line=>{c.fillText(line,x,y);y+=W*.1})}
+  if(sub){c.globalAlpha=.9;c.font='500 '+Math.round(W*.042)+'px system-ui,sans-serif';wrapT(c,sub,max).slice(0,3).forEach(line=>{c.fillText(line,x,y+16);y+=W*.052});c.globalAlpha=1}
+  c.shadowBlur=0;
+}
+function openSocialDesign(){
+  closeSocialDesign();socialSt={bg:S.socialBg||'abstract',fmt:S.socialFmt||'story'};
+  const m=document.createElement('div');m.className='modal';m.id='social-design';
+  m.innerHTML=`<h1>🎨 Crear imagen para redes</h1><div class="mu">Elegí un fondo abstracto o inspirado en el movimiento. Agregá tu propio texto o dejalo vacío para guardar solo el fondo.</div><canvas id="social-cv" class="social-preview"></canvas><div class="mu" style="margin-top:12px">Fondo</div><div class="chips">${BG_PRESETS.map(p=>`<button class="chip" data-sbg="${p.id}">${p.name}</button>`).join('')}</div><div class="mu" style="margin-top:12px">Formato</div><div class="chips">${[['story','Historia 9:16'],['vert','Vertical 4:5'],['sq','Cuadrado']].map(([v,l])=>`<button class="chip" data-sfm="${v}">${l}</button>`).join('')}</div><input id="sd-title" type="text" maxlength="48" placeholder="Título opcional" style="margin-top:12px"><textarea id="sd-sub" maxlength="110" placeholder="Texto breve opcional" style="min-height:80px;margin-top:8px"></textarea><button class="full" id="social-share">📤 Compartir imagen</button><button class="full sec" id="social-save">💾 Guardar PNG</button><button class="full sec" id="social-close">Cerrar</button>`;
+  document.body.appendChild(m);socialChips();drawSocialPreview();
+}
+function saveSocialImage(){const cv=$('social-cv');if(!cv)return;cv.toBlob(b=>{if(!b){toast('No pude crear la imagen');return}const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='mi-entreno-redes-'+ld(new Date())+'.png';document.body.appendChild(a);a.click();a.remove();toast('Imagen guardada en Descargas')},'image/png')}
+function shareSocialImage(){const cv=$('social-cv');if(!cv)return;cv.toBlob(async b=>{if(!b){toast('No pude crear la imagen');return}const f=new File([b],'mi-entreno-redes.png',{type:'image/png'});try{if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f]});return}}catch(e){if(e&&e.name==='AbortError')return}saveSocialImage()},'image/png')}
 function toast(t,gold){const e=document.createElement('div');e.className='toast'+(gold?' gold':'');e.textContent=t;document.body.appendChild(e);setTimeout(()=>e.remove(),3000)}
 function confetti(n){const c=['🎉','✨','🏅','💪','⭐','🔥'];for(let i=0;i<(n||28);i++){const e=document.createElement('span');e.className='cf';e.textContent=pick(c);e.style.left=Math.random()*100+'vw';e.style.animationDelay=Math.random()*.7+'s';e.style.fontSize=(14+Math.random()*16)+'px';document.body.appendChild(e);setTimeout(()=>e.remove(),3400)}}
 function greet(){return nm()?'Bienvenido, '+esc(nm())+' 👋':'Bienvenido 👋'}
@@ -1003,6 +1154,19 @@ let cardioTimerInterval=null,weightCalcExercise=null;
 function cardioElapsed(){const t=S.cur&&S.cur.cardTimer;if(!t)return 0;return Math.max(0,Math.floor((+t.elapsed||0)+(t.running&&t.startedAt?Math.max(0,(Date.now()-t.startedAt)/1000):0)))}
 function timerText(sec){sec=Math.max(0,Math.floor(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
 function cardioMinutes(sec){return String(Math.round(sec/6)/10)}
+async function cardioBackgroundAlert(){
+  if(!document.hidden||!('Notification' in window)||Notification.permission!=='granted')return;
+  const options={body:'La cuenta regresiva de cardio terminó.',icon:'icon-192.png',tag:'mi-entreno-cardio'};
+  try{const reg=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();if(reg)await reg.showNotification('⏱ Tiempo de cardio cumplido',options);else new Notification('⏱ Tiempo de cardio cumplido',options)}catch(e){}
+}
+async function requestCardioNotifications(){
+  if(!('Notification' in window)){toast('Este navegador no admite avisos en pantalla bloqueada.');return}
+  try{const p=await Notification.requestPermission();if(p==='granted')toast('🔔 Avisos de cardio activados');else toast('No se activaron los avisos. Revisá los permisos del navegador.');render()}catch(e){toast('No pude pedir permiso para los avisos.')}
+}
+function notifyCard(){
+  const supported='Notification' in window,granted=supported&&Notification.permission==='granted';
+  return `<div class="card"><h2>🔔 Avisos del cronómetro</h2><div class="mu">Podés permitir un aviso cuando termine la cuenta regresiva si la app está en segundo plano. Si el celular suspende la app, puede llegar con demora.</div><button class="full sec" id="notif-enable" ${granted?'disabled':''}>${!supported?'Navegador sin avisos':granted?'✅ Avisos activados':'Permitir avisos de cardio'}</button></div>`;
+}
 function paintCardioTimer(){
   const el=$('ctmr'),t=S.cur&&S.cur.cardTimer;if(!el)return;
   if(!t){el.style.display='none';el.innerHTML='';return}
@@ -1015,7 +1179,7 @@ function cardioTimerTick(){
   if(t.running&&t.mode==='down'&&cardioElapsed()>=(+t.targetSeconds||0)){
     t.elapsed=+t.targetSeconds||0;t.startedAt=null;t.running=false;t.completed=true;S.cur.card.min=cardioMinutes(t.elapsed);S.cur.card.done=true;save();
     clearInterval(cardioTimerInterval);cardioTimerInterval=null;
-    if(OPT().sound)tone(880,.25);if(OPT().vib){try{navigator.vibrate&&navigator.vibrate([300,150,500])}catch(e){}}
+    if(OPT().sound)tone(880,.25);if(OPT().vib){try{navigator.vibrate&&navigator.vibrate([300,150,500])}catch(e){}}cardioBackgroundAlert();
     if(view==='hoy')render();toast('⏱ ¡Terminó el tiempo de cardio!');paintCardioTimer();return;
   }
   paintCardioTimer();
@@ -1378,7 +1542,7 @@ function prog(){
   return `<h1>Progreso</h1>${wcard()}${calCard()}${recCard()}${plateauCard()}${balCard()}${segCard()}${fotosCard()}${datosCard()}${semCard()}${logrosCard()}<div class="tiles">${[[S.hist.length,'Entrenos','🏆'],[S.hist.reduce((a,w)=>a+w.ex.reduce((b,e)=>b+(e.sets?e.sets.length:0),0),0),'Series','💪'],[S.hist.reduce((a,w)=>a+(w.kcalW||w.kcal||0),0)+(S.extra||[]).reduce((a,x)=>a+(x.kcalW||x.kcal||0),0),'Kcal','🔥']].map(([v,l,ic])=>`<div class="card tile"><div style="font-size:26px">${ic}</div><b>${v}</b><span class="mu">${l}</span></div>`).join('')}</div><div class="card"><select id="pex">${names.map(n=>`<option ${n===S.pex?'selected':''}>${esc(n)}</option>`).join('')}</select><svg viewBox="0 0 ${W} ${H}" style="width:100%;margin-top:10px"><polyline points="${line}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linejoin="round"/>${pts.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.kg)}" r="4" fill="var(--ac)"/><text x="${X(i)}" y="${Y(p.kg)-9}" text-anchor="middle" font-size="11" fill="var(--tx)">${p.kg}</text><text x="${X(i)}" y="${H-6}" text-anchor="middle" font-size="10" fill="var(--mu)">${p.w?'S'+p.w:''}</text>`).join('')}</svg><div class="mu">${pts.length} registros · mejor serie de cada entrenamiento (kg)${pts.length>1?' · cambio: '+(d>0?'+':'')+d+' kg':''}</div></div>`;
 }
 function plan(){
-  return `<h1>Ajustes</h1>`+`<div class="card"><h2>👤 Mi perfil</h2><div class="row"><span style="flex:1">Nombre</span><input type="text" value="${esc(PF().name||'')}" data-pf="name" style="width:160px;font-size:18px"></div><div class="row"><span style="flex:1">Altura (cm)</span><input type="number" inputmode="numeric" value="${PF().h||''}" data-pf="h"></div><div class="row"><span style="flex:1">Fecha de nacimiento</span><input type="date" value="${esc(PF().birth||'')}" data-pf="birth" style="width:165px;font-size:16px"></div>${ageNote()}<div class="row"><span style="flex:1">Peso objetivo (kg)</span><input type="number" inputmode="decimal" value="${PF().goalKg||''}" data-pf="goalKg"></div><div class="row"><span style="flex:1">Mi objetivo</span><select data-pf="goal" style="width:160px">${[['bajar','Bajar de peso'],['mantener','Mantener'],['subir','Subir de peso']].map(([v,t])=>`<option value="${v}" ${PF().goal===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="mu" style="margin-top:10px">Mis frases motivadoras (una por línea, opcional)</div><textarea data-pf="customTxt" style="min-height:90px;font-size:16px;margin-top:6px">${esc(PF().customTxt||'')}</textarea>${PF().h&&S.bw?`<div class="mu" style="margin-top:8px">IMC: ${(S.bw/Math.pow(PF().h/100,2)).toFixed(1)}</div>`:''}</div><div class="card"><h2>📍 Mi ciudad (clima)</h2><div class="mu">${PF().city?'Actual: '+esc(PF().city):'Elegí tu ciudad para que las frases tengan en cuenta el clima.'}</div><div class="row"><input type="text" id="cty" placeholder="Ej: Pilar" style="width:auto;flex:1;font-size:18px"><button class="sec" id="ctyb">Buscar</button></div><div id="ctyr"></div></div><div class="card"><h2>⚙️ Preferencias</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="row"><span style="flex:1">🔆 Mantener la pantalla encendida mientras entrenás</span><input type="checkbox" data-opt="wake" ${OPT().wake?'checked':''}></div><div class="row"><span style="flex:1">🔔 Sonido al terminar el descanso</span><input type="checkbox" data-opt="sound" ${OPT().sound?'checked':''}></div><div class="row"><span style="flex:1">📳 Vibración al terminar el descanso</span><input type="checkbox" data-opt="vib" ${OPT().vib?'checked':''}></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div>${uiCard()}<h2 id="plansec" style="margin:22px 0 10px;font-size:20px">📄 Mi plan de entrenamiento</h2><div class="card"><div class="mu">Subí el PDF del plan, un archivo TXT o Markdown, o pegá el texto. Cada plan nuevo se conserva. Después revisá cuántas sesiones y ejercicios se cargaron.</div>
+  return `<h1>Ajustes</h1>`+`<div class="card"><h2>👤 Mi perfil</h2><div class="row"><span style="flex:1">Nombre</span><input type="text" value="${esc(PF().name||'')}" data-pf="name" style="width:160px;font-size:18px"></div><div class="row"><span style="flex:1">Altura (cm)</span><input type="number" inputmode="numeric" value="${PF().h||''}" data-pf="h"></div><div class="row"><span style="flex:1">Fecha de nacimiento</span><input type="date" value="${esc(PF().birth||'')}" data-pf="birth" style="width:165px;font-size:16px"></div>${ageNote()}<div class="row"><span style="flex:1">Peso objetivo (kg)</span><input type="number" inputmode="decimal" value="${PF().goalKg||''}" data-pf="goalKg"></div><div class="row"><span style="flex:1">Mi objetivo</span><select data-pf="goal" style="width:160px">${[['bajar','Bajar de peso'],['mantener','Mantener'],['subir','Subir de peso']].map(([v,t])=>`<option value="${v}" ${PF().goal===v?'selected':''}>${t}</option>`).join('')}</select></div><div class="mu" style="margin-top:10px">Mis frases motivadoras (una por línea, opcional)</div><textarea data-pf="customTxt" style="min-height:90px;font-size:16px;margin-top:6px">${esc(PF().customTxt||'')}</textarea>${PF().h&&S.bw?`<div class="mu" style="margin-top:8px">IMC: ${(S.bw/Math.pow(PF().h/100,2)).toFixed(1)}</div>`:''}</div><div class="card"><h2>📍 Mi ciudad (clima)</h2><div class="mu">${PF().city?'Actual: '+esc(PF().city):'Elegí tu ciudad para que las frases tengan en cuenta el clima.'}</div><div class="row"><input type="text" id="cty" placeholder="Ej: Pilar" style="width:auto;flex:1;font-size:18px"><button class="sec" id="ctyb">Buscar</button></div><div id="ctyr"></div></div><div class="card"><h2>⚙️ Preferencias</h2><div class="row"><span style="flex:1">Peso corporal (kg)</span><input type="number" inputmode="decimal" value="${S.bw||''}" data-set="bw"></div><div class="row"><span style="flex:1">Descanso entre series (seg)</span><input type="number" inputmode="numeric" value="${S.rest||90}" data-set="rest"></div><div class="row"><span style="flex:1">🔆 Mantener la pantalla encendida mientras entrenás</span><input type="checkbox" data-opt="wake" ${OPT().wake?'checked':''}></div><div class="row"><span style="flex:1">🔔 Sonido al terminar el descanso</span><input type="checkbox" data-opt="sound" ${OPT().sound?'checked':''}></div><div class="row"><span style="flex:1">📳 Vibración al terminar el descanso</span><input type="checkbox" data-opt="vib" ${OPT().vib?'checked':''}></div><div class="mu" style="margin-top:8px">El peso corporal se usa solo para estimar calorías.</div></div>${uiCard()}${socialCard()}${notifyCard()}${driveCard()}<h2 id="plansec" style="margin:22px 0 10px;font-size:20px">📄 Mi plan de entrenamiento</h2><div class="card"><div class="mu">Subí el PDF del plan, un archivo TXT o Markdown, o pegá el texto. Cada plan nuevo se conserva. Después revisá cuántas sesiones y ejercicios se cargaron.</div>
   <input type="file" id="pdf" accept="application/pdf,.pdf,.txt,.md,text/plain,text/markdown" class="full" style="margin-top:10px">
   <textarea id="txt" placeholder="A | Fuerza general&#10;Press de pecho 3 x 10-12&#10;Dead Bug 3 x 10 por lado&#10;Plancha 3 x 30 segundos&#10;Cardio: 10 min de bicicleta" style="margin-top:8px">${esc(S.plan?S.plan.raw:'')}</textarea>
   <button class="full" id="go">Interpretar y cargar plan</button><div id="msg" class="mu" style="margin-top:8px"></div></div>`+
@@ -1425,10 +1589,24 @@ document.addEventListener('click',async e=>{
   else if(d.ui){const[k,v]=d.ui.split(':');UI()[k]=(k==='size')?+v:v;save();applyUi();render()}
   else if(d.cd)dayPopup(d.cd);
   else if(d.cal){const[Y,M]=(calM||calKey(new Date())).split('-').map(Number);calM=calKey(new Date(Y,M-1+ +d.cal,1));render()}
+  else if(b.id==='drive-connect')driveConnect('connect');
+  else if(b.id==='drive-save'){if(driveTokenValid())driveWriteFile();else driveConnect('save')}
+  else if(b.id==='drive-restore'){if(driveTokenValid())driveRestoreFile();else driveConnect('restore')}
+  else if(b.id==='drive-restore-choice')resolveDriveConflict('restore');
+  else if(b.id==='drive-keep-choice')resolveDriveConflict('keep');
+  else if(b.id==='drive-cancel-choice')resolveDriveConflict('cancel');
   else if(d.cardw!==undefined)openCard('workout',d.cardw);
   else if(d.cardr)openCard('record');
+  else if(b.id==='social-open')openSocialDesign();
+  else if(b.id==='social-close')closeSocialDesign();
+  else if(b.id==='social-save')saveSocialImage();
+  else if(b.id==='social-share')shareSocialImage();
+  else if(d.sbg&&socialSt){socialSt.bg=d.sbg;S.socialBg=d.sbg;save();socialChips();drawSocialPreview()}
+  else if(d.sfm&&socialSt){socialSt.fmt=d.sfm;S.socialFmt=d.sfm;save();socialChips();drawSocialPreview()}
+  else if(b.id==='notif-enable')requestCardioNotifications();
   else if(b.id==='cd-bg')$('cd-f').click();
-  else if(b.id==='cd-nobg'){cardSt.img=null;cardChips();cardRedraw();fdel('cardbg').catch(()=>{})}
+  else if(b.id==='cd-nobg'){cardSt.img=null;cardSt.bg='app';S.cardBg='app';save();cardChips();cardRedraw();fdel('cardbg').catch(()=>{})}
+  else if(d.bg&&cardSt){cardSt.bg=d.bg;cardSt.img=null;S.cardBg=d.bg;save();cardChips();cardRedraw()}
   else if(d.dk!==undefined&&cardSt){cardSt.dark=+d.dk;cardChips();cardRedraw()}
   else if(d.cs&&cardSt){cardSt.style=d.cs;S.cardStyle=d.cs;save();cardChips();cardRedraw()}
   else if(d.fm&&cardSt){cardSt.fmt=d.fm;cardChips();cardRedraw()}
@@ -1517,6 +1695,7 @@ document.addEventListener('click',async e=>{
 document.addEventListener('input',e=>{
   const d=e.target.dataset;if(d.f&&S.cur){S.cur.sets[d.i][d.k][d.f]=e.target.value;save()}
   if(d.bk&&S.cur){S.cur[d.bk].min=e.target.value;save();upd()}
+  if(e.target.id==='sd-title'||e.target.id==='sd-sub')drawSocialPreview();
   if(e.target.id==='wc-base'&&weightCalcExercise!==null){const ex=curSes()?.ex?.[weightCalcExercise];if(ex){S.plateBases=S.plateBases||{};S.plateBases[ex.name]=e.target.value;save()}recalcWeightCalc()}
   if(d.plate!==undefined)recalcWeightCalc();
   if(d.n!==undefined&&S.cur){(S.cur.notes=S.cur.notes||{})[d.n]=e.target.value;save()}
@@ -1543,7 +1722,7 @@ document.addEventListener('change',async e=>{
   if(!isPdf&&!isText){$('msg').textContent='Elegí un archivo PDF, TXT o Markdown.';return}
   $('msg').textContent=isPdf?'Leyendo PDF…':'Leyendo plan…';
   try{const t=isPdf?await pdfText(f):await f.text();$('txt').value=t;setPlan(t)}
-  catch(err){$('msg').textContent='No pude leer el archivo. Usá un PDF con texto seleccionable, TXT o Markdown, o pegá el texto.'}
+  catch(err){$('msg').textContent='No pude leer el archivo. Si el PDF está escaneado, comprobá la conexión e intentá de nuevo; también podés usar TXT, Markdown o pegar el texto.'}
 });
 history.replaceState({v:'home'},'');addEventListener('popstate',e=>{closeAll();navBack=true;view=(e.state&&e.state.v)||'home';render();scrollTo(0,0)});
 applyUi();try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(UI().theme==='auto')applyUi()})}catch(e){}
@@ -1561,3 +1740,4 @@ setTimeout(()=>{const t=ld(new Date());if(new Date().getDay()===0&&S.wkShown!==t
 setTimeout(()=>{if(!S.onb&&!nm()&&!S.plan&&!S.hist.length&&!S.cur)openOb()},3400);
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script></body></html>
+
