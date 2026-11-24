@@ -115,6 +115,7 @@ button:active{transform:scale(.97);transition:transform .08s}.tile4:active{trans
 
 /* v16: seguimiento, fotos, temporizadores */
 .rest.tm{bottom:calc(76px + env(safe-area-inset-bottom,0px));background:#0ea5e9}
+#ctmr.rest{bottom:calc(138px + env(safe-area-inset-bottom,0px));background:#7c3aed;z-index:20}
 .thumb{padding:0;min-height:0;aspect-ratio:3/4;background:var(--bg);border-radius:12px;overflow:hidden;border:1px solid var(--bd);position:relative}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}.thumb span{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:12px;padding:2px 0}
 .hb{height:12px;border-radius:6px;background:var(--ac2);overflow:hidden}.hb i{display:block;height:100%;background:var(--ac);transition:width .4s}
@@ -129,6 +130,7 @@ button:active{transform:scale(.97);transition:transform .08s}.tile4:active{trans
 </style></head><body><main id="app"></main>
 <div id="rest" class="rest"></div>
 <div id="tmr" class="rest tm"></div>
+<div id="ctmr" class="rest" aria-live="polite"></div>
 <nav id="nav"></nav>
 <div id="splash"><div class="sp-ic" id="sp-ic">🏋️</div><div class="sp-t" id="sp-t">Bienvenido</div><div class="sp-s" id="sp-s">Comencemos el entrenamiento</div><div class="sp-bar"><i></i></div></div>
 <script>/* qrcode-generator, licencia MIT */
@@ -997,6 +999,76 @@ function setRow(e,x,i,k){
   const unit=e.unit==='s'?'seg':e.unit==='min'?'min':'reps',first=String(e.reps).split('-')[0],step=e.unit==='min'?'0.1':'1';
   return `<div class="row"><span class="sn">${k+1}</span>${needsLoad(e)?`<button class="stp" data-st="${i}|${k}|-1">−</button><input type="number" inputmode="decimal" placeholder="kg" value="${esc(x.kg)}" data-i="${i}" data-k="${k}" data-f="kg"><button class="stp" data-st="${i}|${k}|1">+</button>`:''}<input class="rp" type="number" step="${step}" inputmode="${e.unit==='min'?'decimal':'numeric'}" placeholder="${esc(first)}" value="${esc(x.reps)}" data-i="${i}" data-k="${k}" data-f="reps"><span class="mu" style="width:38px;flex:none">${unit}</span><button class="chk ${x.done?'on':''}" data-d="${i}-${k}">✓</button></div>`;
 }
+let cardioTimerInterval=null,weightCalcExercise=null;
+function cardioElapsed(){const t=S.cur&&S.cur.cardTimer;if(!t)return 0;return Math.max(0,Math.floor((+t.elapsed||0)+(t.running&&t.startedAt?Math.max(0,(Date.now()-t.startedAt)/1000):0)))}
+function timerText(sec){sec=Math.max(0,Math.floor(sec));return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0')}
+function cardioMinutes(sec){return String(Math.round(sec/6)/10)}
+function paintCardioTimer(){
+  const el=$('ctmr'),t=S.cur&&S.cur.cardTimer;if(!el)return;
+  if(!t){el.style.display='none';el.innerHTML='';return}
+  const elapsed=cardioElapsed(),left=t.mode==='down'?Math.max(0,(+t.targetSeconds||0)-elapsed):elapsed;
+  el.style.display='flex';el.innerHTML=`<span>${t.completed?'✅ Cardio completo':t.mode==='down'?'⏳ Cuenta regresiva':'⏱ Cronómetro'} · <b>${timerText(left)}</b></span>${t.completed?'':`<button data-ct-pause="1">${t.running?'Pausar':'Seguir'}</button>`}<button data-ct-stop="1">${t.completed?'Cerrar':'Guardar'}</button>`;
+}
+function startCardioTick(){if(!cardioTimerInterval)cardioTimerInterval=setInterval(cardioTimerTick,1000)}
+function cardioTimerTick(){
+  const t=S.cur&&S.cur.cardTimer;if(!t){clearInterval(cardioTimerInterval);cardioTimerInterval=null;paintCardioTimer();return}
+  if(t.running&&t.mode==='down'&&cardioElapsed()>=(+t.targetSeconds||0)){
+    t.elapsed=+t.targetSeconds||0;t.startedAt=null;t.running=false;t.completed=true;S.cur.card.min=cardioMinutes(t.elapsed);S.cur.card.done=true;save();
+    clearInterval(cardioTimerInterval);cardioTimerInterval=null;
+    if(OPT().sound)tone(880,.25);if(OPT().vib){try{navigator.vibrate&&navigator.vibrate([300,150,500])}catch(e){}}
+    if(view==='hoy')render();toast('⏱ ¡Terminó el tiempo de cardio!');paintCardioTimer();return;
+  }
+  paintCardioTimer();
+}
+function startCardioTimer(mode){
+  if(!S.cur)return;
+  if(S.cur.cardTimer){toast('Ya hay un temporizador de cardio. Pausalo o guardalo primero.');return}
+  let targetSeconds=0;
+  if(mode==='down'){
+    const mins=parseFloat(String(S.cur.card.min||'').replace(',','.'));
+    if(!(mins>0)){toast('Ingresá los minutos para la cuenta regresiva.');return}
+    targetSeconds=Math.round(mins*60);
+  }
+  S.cur.cardTimer={mode,elapsed:0,startedAt:Date.now(),running:true,targetSeconds};save();
+  if(OPT().sound){try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume()}catch(e){}}
+  tone(660,.1,.1);startCardioTick();paintCardioTimer();
+}
+function pauseCardioTimer(){
+  const t=S.cur&&S.cur.cardTimer;if(!t||t.completed)return;
+  if(t.running){t.elapsed=cardioElapsed();t.running=false;t.startedAt=null;clearInterval(cardioTimerInterval);cardioTimerInterval=null}
+  else{t.startedAt=Date.now();t.running=true;startCardioTick()}
+  save();paintCardioTimer();
+}
+function stopCardioTimer(saveResult=true,redraw=true){
+  const t=S.cur&&S.cur.cardTimer;if(!t){clearInterval(cardioTimerInterval);cardioTimerInterval=null;paintCardioTimer();return}
+  const elapsed=t.completed?(+t.targetSeconds||t.elapsed||0):cardioElapsed();
+  if(saveResult&&elapsed>0){S.cur.card.min=cardioMinutes(elapsed);S.cur.card.done=true}
+  delete S.cur.cardTimer;clearInterval(cardioTimerInterval);cardioTimerInterval=null;save();paintCardioTimer();
+  if(redraw&&view==='hoy')render();
+}
+function openWeightCalc(i){
+  const e=curSes()?.ex?.[i];if(!e||!needsLoad(e))return;
+  closeWeightCalc();weightCalcExercise=i;S.plateBases=S.plateBases||{};
+  const base=S.plateBases[e.name]??0,plates=[1.25,2.5,5,10,15,20,25];
+  const m=document.createElement('div');m.className='modal';m.id='wcalc';
+  m.innerHTML=`<button class="sec" id="wc-close">← Volver</button><h1 style="margin-top:12px">🧮 Calculadora de discos</h1><div class="mu">${esc(e.name)} · anotá cuántos discos ponés en cada lado.</div><div class="row"><label for="wc-base" style="flex:1">Peso base del carro o la máquina (kg, opcional)</label><input id="wc-base" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(base)}" style="width:92px;flex:none"></div><h2 style="margin-top:20px">Discos por lado</h2>${plates.map(p=>`<div class="row" style="padding:5px 0;border-bottom:1px solid var(--bd)"><span style="flex:1">${String(p).replace('.',',')} kg</span><span class="mu">cantidad</span><input type="number" min="0" step="1" inputmode="numeric" value="0" data-plate="${p}" style="width:76px;flex:none"></div>`).join('')}<div class="card" style="margin-top:14px;text-align:center"><div class="mu">Carga total (base + ambos lados)</div><div id="wc-total" style="font-size:32px;font-weight:800;color:var(--ac)" data-kg="0">0 kg</div><div id="wc-detail" class="mu"></div></div><button class="full" id="wc-apply">Usar en la próxima serie</button><button class="full sec" id="wc-cancel">Cerrar sin aplicar</button>`;
+  document.body.appendChild(m);recalcWeightCalc();
+}
+function closeWeightCalc(){const m=$('wcalc');if(m)m.remove();weightCalcExercise=null}
+function recalcWeightCalc(){
+  const totalEl=$('wc-total');if(!totalEl)return;
+  const base=Math.max(0,parseFloat(String($('wc-base')?.value||'0').replace(',','.'))||0);let oneSide=0;
+  document.querySelectorAll('#wcalc [data-plate]').forEach(x=>{oneSide+=(+x.dataset.plate||0)*(parseInt(x.value,10)||0)});
+  const round=x=>Math.round(x*10)/10,fmt=x=>String(round(x)).replace('.',',');
+  const total=round(base+2*oneSide);totalEl.dataset.kg=String(total);totalEl.textContent=fmt(total)+' kg';
+  $('wc-detail').textContent=fmt(base)+' kg base + '+fmt(oneSide*2)+' kg en discos ('+fmt(oneSide)+' kg por lado)';
+}
+function applyWeightCalc(){
+  const i=weightCalcExercise,arr=S.cur&&S.cur.sets&&S.cur.sets[i];if(!arr){closeWeightCalc();return}
+  const k=arr.findIndex(x=>!x.done);if(k<0){toast('Ya completaste todas las series de este ejercicio.');return}
+  const kg=parseFloat($('wc-total')?.dataset.kg||'0');if(!(kg>0)){toast('Ingresá al menos un disco o un peso base.');return}
+  arr[k].kg=String(Math.round(kg*10)/10);save();closeWeightCalc();render();toast('Carga aplicada a la serie '+(k+1)+': '+String(arr[k].kg).replace('.',',')+' kg');
+}
 function upd(){const el=$('kc');if(el)el.textContent=kcalCur();const i=setsInfo(),pb=$('pb'),pt=$('pt');if(pb)pb.style.width=(i.t?i.d/i.t*100:0)+'%';if(pt)pt.textContent=i.d+' de '+i.t+' series'}
 let justDone=null;
 let rt=null,rl=0;
@@ -1028,6 +1100,7 @@ function start(si){
   startPopup(s);
 }
 function finish(){
+  stopCardioTimer(true,false);
   const s=curSes(),ex=[];
   const add=(n,b)=>{if(b&&(b.done||(b.m&&b.min)))ex.push({name:n,m:b.m,min:b.min})};
   add('Entrada en calor',S.cur.warm);
@@ -1042,7 +1115,8 @@ function finish(){
 }
 
 function blk(k,title,hint,b){
-  return `<div class="card"><div class="row" style="margin:0"><div style="flex:1"><h2>${title}</h2>${hint?`<div class="mu">${esc(hint)}</div>`:''}</div><button class="chk ${b.done?'on':''}" data-b="${k}">✓</button></div><div class="chips">${(k==='warm'?['Caminata','Bici','Movilidad']:['Bici','Escalera','Cinta']).map(m=>`<button class="chip ${b.m===m?'on':''}" data-m="${k}|${m}">${m}</button>`).join('')}</div><div class="row"><input type="number" inputmode="numeric" placeholder="min" value="${esc(b.min)}" data-bk="${k}"><span class="mu">minutos</span></div>${k==='warm'?'<button class="sec full" data-gw="1" style="min-height:48px;font-size:16px">▶ Calentamiento guiado · 8 min</button>':''}</div>`;
+  const timed=k==='card',locked=timed&&S.cur&&S.cur.cardTimer;
+  return `<div class="card"><div class="row" style="margin:0"><div style="flex:1"><h2>${title}</h2>${hint?`<div class="mu">${esc(hint)}</div>`:''}</div><button class="chk ${b.done?'on':''}" data-b="${k}">✓</button></div><div class="chips">${(k==='warm'?['Caminata','Bici','Movilidad']:['Bici','Escalera','Cinta']).map(m=>`<button class="chip ${b.m===m?'on':''}" data-m="${k}|${m}">${m}</button>`).join('')}</div><div class="row"><input type="number" min="0" step="${timed?'0.1':'1'}" inputmode="${timed?'decimal':'numeric'}" placeholder="min" value="${esc(b.min)}" data-bk="${k}" ${locked?'disabled':''}><span class="mu">minutos</span></div>${timed?`<div class="row"><button class="sec" data-ct-start="up">⏱ Cronómetro</button><button class="sec" data-ct-start="down">⏳ Cuenta regresiva</button></div><div class="mu" style="margin-top:6px">La cuenta regresiva usa los minutos ingresados arriba.</div>`:''}${k==='warm'?'<button class="sec full" data-gw="1" style="min-height:48px;font-size:16px">▶ Calentamiento guiado · 8 min</button>':''}</div>`;
 }
 function hoy(){
   if(!S.plan&&!S.cur)return `<h1>Mi Entreno</h1><div class="card">Todavía no hay un plan activo. Cargá uno nuevo o activá un plan guardado desde Ajustes.</div><button class="full" data-gp="1">⚙️ Cargar mi plan</button>${rutList()}<button class="full sec" id="free">🆓 Entreno libre (sin plan)</button><button class="full sec" id="xtra">➕ Registrar actividad extra</button>`;
@@ -1053,7 +1127,7 @@ function hoy(){
     const si_=setsInfo();return `<div class="pbar"><div class="row" style="margin:0 0 6px"><button class="sec" data-back="1" style="width:48px;min-height:44px;padding:0;font-size:22px;flex:none">←</button><h1 style="margin:0;font-size:22px;flex:1">${esc(s.name)}</h1><span class="mu">Semana ${weekNumber(S.cur.planWeekStart||S.plan?.weekStart,S.cur.week||S.week)}</span></div><div class="tr"><div id="pb" style="width:${si_.t?si_.d/si_.t*100:0}%"></div></div><div class="mu" id="pt" style="margin-top:4px">${si_.d} de ${si_.t} series</div></div>`+(S.cur.watch?'':`<div class="card" style="border-left:6px solid var(--ac)"><div class="row" style="margin:0"><span style="font-size:30px">⌚</span><div style="flex:1"><b>Iniciá «Fuerza» en tu reloj</b><div class="mu">Entrenamiento en interior, antes de empezar</div></div><button class="sec" data-watch="1" style="padding:0 14px;min-height:46px">Listo</button></div></div>`)+blk('warm','Entrada en calor','',S.cur.warm)+s.ex.map((e,i)=>{
       if(!e.sets)return '';
       const last=lastFor(e.name);
-      return `<div class="card"><div class="row" style="margin:0">${demoId(e.name)?`<img class="th" alt="" src="${IMG+demoId(e.name)}/0.jpg" onerror="this.remove()">`:''}<h2 style="flex:1">${esc(e.name)}</h2><button class="sec" style="padding:0 14px;min-height:46px" data-demo="w${i}">▶ Ver</button></div><div id="dm-w${i}" class="demo" hidden>${demoHtml(e.name)}</div><div class="mu">${e.sets} x ${esc(targetText(e.reps,e.unit))}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>setText(x,e.unit)).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}${sugHtml(e,i)}${plHtml(e.name)}${exSecs(e)?`<button class="sec full" data-tm="${i}" style="min-height:48px;font-size:16px">⏱ Iniciar temporizador (${exSecs(e)} s)</button>`:''}`+
+      return `<div class="card"><div class="row" style="margin:0">${demoId(e.name)?`<img class="th" alt="" src="${IMG+demoId(e.name)}/0.jpg" onerror="this.remove()">`:''}<h2 style="flex:1">${esc(e.name)}</h2>${needsLoad(e)?`<button class="sec" style="padding:0 10px;min-height:46px;white-space:nowrap" data-wcalc="${i}">🧮 Discos</button>`:''}<button class="sec" style="padding:0 14px;min-height:46px" data-demo="w${i}">▶ Ver</button></div><div id="dm-w${i}" class="demo" hidden>${demoHtml(e.name)}</div><div class="mu">${e.sets} x ${esc(targetText(e.reps,e.unit))}${e.side?' por lado':''}${last?' · última vez: '+last.map(x=>setText(x,e.unit)).join(', '):''}</div>${lastNote(e.name)?`<div class="mu">📝 Última nota: ${esc(lastNote(e.name))}</div>`:''}${sugHtml(e,i)}${plHtml(e.name)}${exSecs(e)?`<button class="sec full" data-tm="${i}" style="min-height:48px;font-size:16px">⏱ Iniciar temporizador (${exSecs(e)} s)</button>`:''}`+
       S.cur.sets[i].map((x,k)=>setRow(e,x,i,k)).join('')+`<div class="row" style="margin-top:8px;justify-content:center"><button class="sec" data-add="${i}" style="min-height:40px;padding:0 16px;font-size:15px">＋ Serie</button><button class="sec" data-rm="${i}" style="min-height:40px;padding:0 16px;font-size:15px">－ Serie</button></div><input type="text" placeholder="Nota (ej. subir la próxima)" value="${esc((S.cur.notes||{})[i]||'')}" data-n="${i}" style="margin-top:10px"></div>`;
     }).join('')+blk('card','Cardio',(s.ex.find(e=>!e.sets)||{}).note||'',S.cur.card)+(S.cur.free?'<button class="full sec" id="addex">＋ Agregar ejercicio</button>':'')+'<button class="full sec" id="saverut">⭐ Guardar como rutina</button>'+`<div class="card mu">🔥 Gasto estimado hasta ahora: <b id="kc" style="color:var(--tx)">${kcalCur()}</b> kcal · aproximado</div><div class="card"><h2>⌚ Datos de tu reloj</h2><div class="mu">Al terminar, mirá el resumen del reloj y cargalo acá (opcional).</div><div class="row"><input type="number" inputmode="numeric" placeholder="kcal" value="${esc(S.cur.wkc||'')}" data-wk="kcal"><span class="mu" style="flex:1">kcal</span><input type="number" inputmode="numeric" placeholder="ppm" value="${esc(S.cur.whr||'')}" data-wk="hr"><span class="mu" style="flex:1">pulso medio</span></div><div class="row"><input type="number" inputmode="numeric" placeholder="min" value="${esc(S.cur.wdur||'')}" data-wk="dur"><span class="mu" style="flex:1">minutos de entrenamiento (opcional: si no, se mide solo)</span></div></div><button class="full" id="fin">Terminar entrenamiento</button><button class="full sec" id="can">Cancelar</button>`;
   }
@@ -1398,6 +1472,12 @@ document.addEventListener('click',async e=>{
   else if(b.id==='fdel')delFoto();
   else if(b.id==='fclose')closeFotos();
   else if(d.sug){const[a_,kg_]=d.sug.split('|');S.cur.sets[a_].forEach(x=>{if(!x.done)x.kg=String(kg_)});save();render()}
+  else if(d.wcalc!==undefined)openWeightCalc(+d.wcalc);
+  else if(b.id==='wc-close'||b.id==='wc-cancel')closeWeightCalc();
+  else if(b.id==='wc-apply')applyWeightCalc();
+  else if(d.ctStart)startCardioTimer(d.ctStart);
+  else if(d.ctPause)pauseCardioTimer();
+  else if(d.ctStop)stopCardioTimer(true);
   else if(d.tm!==undefined){const i=+d.tm,e=curSes().ex[i],k=S.cur.sets[i].findIndex(x=>!x.done);if(k<0)toast('Ya completaste todas las series. Usá ＋ Serie para sumar otra.');else startTm(i,k,exSecs(e),e.name)}
   else if(d.tmx){stopTm()}
   else if(d.gw)openGW();
@@ -1431,12 +1511,14 @@ document.addEventListener('click',async e=>{
   else if(d.w){S.week=clampWeek(S.week+ +d.w);saveActivePlan();save();render()}
   else if(d.x){if(confirm('¿Borrar este entrenamiento?')){S.hist=S.hist.filter(w=>w.id!=d.x);save();render()}}
   else if(b.id==='fin')finish();
-  else if(b.id==='can'){if(confirm('¿Descartar este entrenamiento?')){stopRest();S.cur=null;save();render()}}
+  else if(b.id==='can'){if(confirm('¿Descartar este entrenamiento?')){stopRest();stopCardioTimer(false,false);S.cur=null;save();render()}}
   else if(b.id==='go')setPlan($('txt').value);
 });
 document.addEventListener('input',e=>{
   const d=e.target.dataset;if(d.f&&S.cur){S.cur.sets[d.i][d.k][d.f]=e.target.value;save()}
   if(d.bk&&S.cur){S.cur[d.bk].min=e.target.value;save();upd()}
+  if(e.target.id==='wc-base'&&weightCalcExercise!==null){const ex=curSes()?.ex?.[weightCalcExercise];if(ex){S.plateBases=S.plateBases||{};S.plateBases[ex.name]=e.target.value;save()}recalcWeightCalc()}
+  if(d.plate!==undefined)recalcWeightCalc();
   if(d.n!==undefined&&S.cur){(S.cur.notes=S.cur.notes||{})[d.n]=e.target.value;save()}
   if(d.set){S[d.set]=+e.target.value||0;save()}
   if(d.wk&&S.cur){S.cur[{kcal:'wkc',hr:'whr',dur:'wdur'}[d.wk]]=e.target.value;save()}
@@ -1452,7 +1534,7 @@ document.addEventListener('change',async e=>{
   if(e.target.id==='impf'&&e.target.files[0]){
     try{const o=JSON.parse(await e.target.files[0].text());if(!o||!Array.isArray(o.hist))throw 0;
       if(!confirm('Esto reemplaza lo que hay ahora en la app. ¿Seguir?'))return;
-       S=Object.assign({plan:null,plans:[],activePlanId:null,cur:null,hist:[],week:1,bw:122,rest:90,wts:[],pf:{name:'',h:0,age:0,goalKg:0,goal:'bajar'},opt:{wake:true,sound:true,vib:true}},o);S.cur=null;ensurePlanLibrary();save();render();$('bmsg').textContent='Respaldo importado.'}
+       stopCardioTimer(false,false);S=Object.assign({plan:null,plans:[],activePlanId:null,cur:null,hist:[],week:1,bw:122,rest:90,wts:[],pf:{name:'',h:0,age:0,goalKg:0,goal:'bajar'},opt:{wake:true,sound:true,vib:true}},o);S.cur=null;ensurePlanLibrary();save();render();$('bmsg').textContent='Respaldo importado.'}
     catch(err){$('bmsg').textContent='El archivo no parece un respaldo válido.'}
     return}
   if(e.target.id!=='pdf'||!e.target.files[0])return;
@@ -1465,7 +1547,7 @@ document.addEventListener('change',async e=>{
 });
 history.replaceState({v:'home'},'');addEventListener('popstate',e=>{closeAll();navBack=true;view=(e.state&&e.state.v)||'home';render();scrollTo(0,0)});
 applyUi();try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(UI().theme==='auto')applyUi()})}catch(e){}
-render();loadWx();loadHol();checkAch();
+render();if(S.cur&&S.cur.cardTimer){paintCardioTimer();if(S.cur.cardTimer.running)startCardioTick()}loadWx();loadHol();checkAch();
 (function(){const sp=$('splash');if(!sp)return;
   const n=nm(),bd=isBirthday(),reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
   $('sp-ic').textContent=bd?'🎂':'🏋️';
